@@ -1,7 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
+
+interface DetalleReporte {
+  descripcion: string;
+  tipo: 'ingreso' | 'egreso' | string;
+  fecha: string;
+  monto: number;
+}
 
 interface Reporte {
   id: string;
@@ -12,7 +19,7 @@ interface Reporte {
   balance: number;
   generadoPor: string;
   fechaCreacion: string;
-  detalles: any[];
+  detalles: DetalleReporte[];
 }
 
 export default function Home() {
@@ -42,7 +49,7 @@ export default function Home() {
       });
       setToken(response.data.token);
       setInfoMsg(`Autenticado exitosamente como ${username} (${role}). Token generado.`);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       setError('Error al autenticar con el API Gateway. Asegúrese de que esté en ejecución.');
     } finally {
@@ -78,14 +85,19 @@ export default function Home() {
       );
       setReporte(response.data);
       setInfoMsg('Reporte generado exitosamente y cargado desde el microservicio.');
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      if (err.response?.status === 403) {
-        setError('Acceso denegado (403): Permisos insuficientes para el rol asignado.');
-      } else if (err.response?.status === 401) {
-        setError('No autorizado (401): Token JWT inválido o expirado.');
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 403) {
+          setError('Acceso denegado (403): Permisos insuficientes para el rol asignado.');
+        } else if (err.response?.status === 401) {
+          setError('No autorizado (401): Token JWT inválido o expirado.');
+        } else {
+          const message = err.response?.data as { message?: string } | undefined;
+          setError(message?.message || 'Error de comunicación con el backend.');
+        }
       } else {
-        setError(err.response?.data?.message || 'Error de comunicación con el backend.');
+        setError('Error de comunicación con el backend.');
       }
     } finally {
       setLoading(false);
