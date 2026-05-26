@@ -1,0 +1,11 @@
+.env
+*.log
+build/
+dist/
+__pycache__/
+node_modules/
+coverage/
+.next/
+.env.local
+.env.*.local
+docs/
