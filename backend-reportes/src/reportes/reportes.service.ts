@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
-import Redis from 'ioredis';
-import { FinanzasAdapter } from './adapters/finanzas.adapter';
-import { FirebaseReporteRepository } from './repositories/firebase-reporte.repository';
-import { GenerarReporteDto } from './dto/generar-reporte.dto';
-import { ReporteData } from './interfaces/reporte.interface';
+import { Injectable, Logger } from "@nestjs/common";
+import Redis from "ioredis";
+import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
+import { GenerarReporteDto } from "./dto/generar-reporte.dto";
+import { ReporteData } from "./interfaces/reporte.interface";
 
 @Injectable()
 export class ReportesService {
@@ -14,8 +14,8 @@ export class ReportesService {
     private readonly finanzasAdapter: FinanzasAdapter,
     private readonly firebaseRepository: FirebaseReporteRepository,
   ) {
-    const redisHost = process.env.REDIS_HOST || 'localhost';
-    const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
+    const redisHost = process.env.REDIS_HOST || "localhost";
+    const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10);
 
     try {
       this.redisClient = new Redis({
@@ -24,15 +24,19 @@ export class ReportesService {
         maxRetriesPerRequest: 1,
         retryStrategy: (times) => {
           if (times > 2) {
-            this.logger.warn('Redis connection failed too many times. Running without caching.');
+            this.logger.warn(
+              "Redis connection failed too many times. Running without caching.",
+            );
             return null; // Stop retrying
           }
           return 500;
         },
       });
 
-      this.redisClient.on('error', (err) => {
-        this.logger.warn(`Redis Cache Connection Error: ${err.message}. Bypassing Redis cache.`);
+      this.redisClient.on("error", (err) => {
+        this.logger.warn(
+          `Redis Cache Connection Error: ${err.message}. Bypassing Redis cache.`,
+        );
       });
     } catch (e) {
       this.logger.error(`Redis Initialization Error: ${e.message}`);
@@ -40,11 +44,14 @@ export class ReportesService {
   }
 
   // [Pattern: Cache-Aside]
-  async generarReporte(dto: GenerarReporteDto, usuario: string): Promise<ReporteData> {
+  async generarReporte(
+    dto: GenerarReporteDto,
+    usuario: string,
+  ): Promise<ReporteData> {
     const cacheKey = `reporte:${dto.tipo}:${dto.periodo}`;
 
     // 1. Try reading from Cache (Redis)
-    if (this.redisClient && this.redisClient.status === 'ready') {
+    if (this.redisClient && this.redisClient.status === "ready") {
       try {
         const cachedData = await this.redisClient.get(cacheKey);
         if (cachedData) {
@@ -58,14 +65,20 @@ export class ReportesService {
           return parseResult;
         }
       } catch (cacheError) {
-        this.logger.warn(`Failed to read cache: ${cacheError.message}. Proceeding to source.`);
+        this.logger.warn(
+          `Failed to read cache: ${cacheError.message}. Proceeding to source.`,
+        );
       }
     }
 
-    this.logger.log(`Cache Miss for key: ${cacheKey}. Generating fresh report...`);
+    this.logger.log(
+      `Cache Miss for key: ${cacheKey}. Generating fresh report...`,
+    );
 
     // 2. Fetch fresh data from adapter
-    const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(dto.periodo);
+    const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(
+      dto.periodo,
+    );
 
     // 3. Process data (ISO 25010: Functional suitability and correctness)
     let totalIngresos = 0;
@@ -73,9 +86,9 @@ export class ReportesService {
 
     rawData.forEach((item) => {
       const amount = Number(item.monto) || 0;
-      if (item.tipo === 'ingreso') {
+      if (item.tipo === "ingreso") {
         totalIngresos += amount;
-      } else if (item.tipo === 'egreso') {
+      } else if (item.tipo === "egreso") {
         totalEgresos += amount;
       }
     });
@@ -95,13 +108,20 @@ export class ReportesService {
     };
 
     // 4. Save to Cache
-    if (this.redisClient && this.redisClient.status === 'ready') {
+    if (this.redisClient && this.redisClient.status === "ready") {
       try {
         // Set TTL to 1 hour (3600 seconds)
-        await this.redisClient.set(cacheKey, JSON.stringify(nuevoReporte), 'EX', 3600);
+        await this.redisClient.set(
+          cacheKey,
+          JSON.stringify(nuevoReporte),
+          "EX",
+          3600,
+        );
         this.logger.log(`Fresh report saved to cache under key: ${cacheKey}`);
       } catch (cacheWriteError) {
-        this.logger.warn(`Failed to save report to cache: ${cacheWriteError.message}`);
+        this.logger.warn(
+          `Failed to save report to cache: ${cacheWriteError.message}`,
+        );
       }
     }
 
