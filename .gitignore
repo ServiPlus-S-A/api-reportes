@@ -13,4 +13,3 @@ blob-report/
 .env.local
 .env.*.local
 docs/
-.github/
