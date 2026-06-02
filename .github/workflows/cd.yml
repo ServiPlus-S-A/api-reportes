@@ -1,8 +1,9 @@
 name: CD – ServiPlus
 
 on:
-  push:
+  pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
     paths:
       - "backend-reportes/**"
       - "frontend/**"
@@ -21,7 +22,7 @@ on:
           - production
 
 concurrency:
-  group: cd-${{ github.ref }}-${{ inputs.environment || 'staging' }}
+  group: cd-${{ github.event.pull_request.number || github.run_id }}-${{ inputs.environment || 'staging' }}
   cancel-in-progress: true
 
 env:
@@ -34,6 +35,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +52,8 @@ jobs:
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Login en GitHub Container Registry
         uses: docker/login-action@v3
@@ -65,7 +69,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
           tags: |
             type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=pr
 
       - name: Build y push
         uses: docker/build-push-action@v6
@@ -80,10 +84,12 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || 'staging' }}
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Desplegar por SSH (docker compose)
         uses: appleboy/ssh-action@v1.2.0
@@ -96,7 +102,7 @@ jobs:
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
             export IMAGE_REGISTRY="${{ env.REGISTRY }}/${{ github.repository }}"
-            export IMAGE_TAG="${{ github.sha }}"
+            export IMAGE_TAG="${{ github.event.pull_request.head.sha || github.sha }}"
             docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin <<< "${{ secrets.GHCR_DEPLOY_TOKEN }}"
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
