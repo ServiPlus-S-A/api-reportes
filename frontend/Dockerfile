@@ -6,17 +6,22 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Runtime
-FROM node:18-alpine
+# Stage 2: Runtime (Next.js standalone output)
+FROM node:18-alpine AS runner
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.js ./next.config.js 2>/dev/null || true
 
-# Run as non-root user for security (ISO 25010 / OWASP)
-USER node
+ENV NODE_ENV=production
+ENV PORT=3000
+
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
-CMD ["npm", "start"]
+
+CMD ["node", "server.js"]

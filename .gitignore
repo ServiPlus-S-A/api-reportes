@@ -5,6 +5,10 @@ dist/
 __pycache__/
 node_modules/
 coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
 .next/
 .env.local
 .env.*.local

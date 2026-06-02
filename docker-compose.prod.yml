@@ -2,20 +2,19 @@ services:
   redis:
     image: redis:7.2.5-alpine
     container_name: redis_cache
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
-    ports:
-      - "6379:6379"
     networks:
       - serviplus_net
 
   api-gateway:
-    build:
-      context: ./api-gateway
+    image: ${IMAGE_REGISTRY}/api-gateway:${IMAGE_TAG}
     container_name: api_gateway
+    restart: unless-stopped
     ports:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     environment:
@@ -29,9 +28,9 @@ services:
       - serviplus_net
 
   backend-reportes:
-    build:
-      context: ./backend-reportes
+    image: ${IMAGE_REGISTRY}/backend-reportes:${IMAGE_TAG}
     container_name: backend_reportes
+    restart: unless-stopped
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"
     environment:
@@ -51,13 +50,13 @@ services:
       - serviplus_net
 
   frontend:
-    build:
-      context: ./frontend
+    image: ${IMAGE_REGISTRY}/frontend:${IMAGE_TAG}
     container_name: frontend_app
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:${GATEWAY_PORT}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     depends_on:
       api-gateway:
         condition: service_started
