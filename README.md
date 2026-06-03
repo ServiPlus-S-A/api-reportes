@@ -73,8 +73,8 @@ Backend Reportes (NestJS)
 | Orquestación local | Docker Compose v2 |
 | Caché | Redis 7.2 (Alpine) |
 | CI | GitHub Actions (`ci.yml` en PR a `develop`) |
-| CD | GitHub Actions (`cd.yml` en PR a `main` + GHCR + deploy SSH) |
-| Producción | `docker-compose.prod.yml` + imágenes en `ghcr.io` |
+| CD | GitHub Actions (`cd.yml` en PR a `main` + Docker Hub + deploy SSH) |
+| Producción | `docker-compose.prod.yml` + imágenes en Docker Hub |
 
 ## Requisitos previos
 
@@ -216,7 +216,7 @@ npm run test:e2e
 │   ├── src/app/
 │   └── e2e/
 ├── docker-compose.yml       # Desarrollo local
-├── docker-compose.prod.yml  # Producción (imágenes GHCR)
+├── docker-compose.prod.yml  # Producción (imágenes Docker Hub)
 ├── .env                     # Variables locales (no commitear)
 └── README.md
 ```
@@ -226,7 +226,7 @@ npm run test:e2e
 | Rama / evento | Pipeline | Qué valida |
 |---|---|---|
 | PR → `develop` | **CI** | Lint, Prettier, `tsc`, build, tests Jest (backend), Playwright (frontend), Docker build |
-| PR → `main` | **CD** | Build/push imágenes a GHCR + deploy SSH (si hay secrets configurados) |
+| PR → `main` | **CD** | Build/push imágenes a Docker Hub + deploy SSH (si hay secrets configurados) |
 
 Resumen:
 
@@ -234,11 +234,30 @@ Resumen:
 2. Abrir PR hacia **`develop`** → corre CI (solo jobs afectados por `paths-filter`).
 3. Tras revisión, merge a `develop`.
 4. Abrir PR **`develop` → `main`** → corre CD en cada actualización del PR.
-5. Configurar secrets de deploy en GitHub (`DEPLOY_HOST`, `DEPLOY_SSH_KEY`, `GHCR_DEPLOY_TOKEN`, etc.) para despliegue en EC2 u otro VPS.
+5. Configurar secrets de CD en GitHub (Docker Hub + deploy SSH) para despliegue en EC2 u otro VPS.
 
 ## CI/CD en GitHub
 
-**Secrets recomendados (CD / deploy):**
+### Docker Hub (imágenes del CD)
+
+1. Crea cuenta en [Docker Hub](https://hub.docker.com/) (o usa una existente).
+2. **Account Settings → Security → New Access Token** (permiso *Read & Write* para push desde Actions).
+3. En el repo: **Settings → Secrets and variables → Actions** → crea:
+
+| Secret | Valor |
+|---|---|
+| `DOCKERHUB_USERNAME` | Tu usuario de Docker Hub (namespace), ej. `serviplus` |
+| `DOCKERHUB_TOKEN` | El access token (no la contraseña de la cuenta) |
+
+Las imágenes quedarán como:
+
+- `TU_USUARIO/backend-reportes:<sha>`
+- `TU_USUARIO/frontend:<sha>`
+- `TU_USUARIO/api-gateway:<sha>`
+
+Repositorios privados en Docker Hub requieren plan de pago; para pruebas usa repos **públicos** o un único namespace con las tres imágenes.
+
+### Secrets de deploy (servidor EC2/VPS)
 
 | Secret | Uso |
 |---|---|
@@ -246,11 +265,11 @@ Resumen:
 | `DEPLOY_USER` | Usuario SSH (`ubuntu` en EC2) |
 | `DEPLOY_SSH_KEY` | Clave privada `.pem` |
 | `DEPLOY_PATH` | Ruta con `docker-compose.prod.yml` y `.env` |
-| `GHCR_DEPLOY_TOKEN` | PAT con `read:packages` para `docker pull` |
+| `DEPLOY_PORT` | Opcional (default 22) |
+
+En el servidor, `docker compose` usa `IMAGE_REGISTRY` = tu `DOCKERHUB_USERNAME` y `IMAGE_TAG` = SHA del commit (el CD los exporta antes del `pull`).
 
 Las variables de aplicación (`JWT_SECRET`, `FIREBASE_PROJECT_ID`, puertos) viven en el **`.env` del servidor**, no en GitHub Actions.
-
-**Permisos:** Settings → Actions → Workflow permissions → *Read and write* (publicación en GHCR).
 
 ## Cobertura de tests
 
@@ -272,7 +291,7 @@ La carpeta `coverage/` está en `.gitignore`: se genera en cada ejecución pero 
 | Health check | ✅ | `GET /health` |
 | UI reportes + RBAC demo | ✅ | Next.js, validación periodo `YYYY-MM` |
 | CI en `develop` | ✅ | Paths filter backend / frontend |
-| CD en PR a `main` | ✅ | GHCR + deploy SSH opcional |
+| CD en PR a `main` | ✅ | Docker Hub + deploy SSH opcional |
 | Umbral de cobertura en CI | 🔜 | Opcional (`coverageThreshold`) |
 
 ## Créditos

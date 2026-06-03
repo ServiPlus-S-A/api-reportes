@@ -5,7 +5,7 @@
 <!-- Indica hacia qué rama va el PR y qué pipeline debe pasar. -->
 
 - [ ] **`develop`** → dispara **CI** (lint, build, tests, Docker build)
-- [ ] **`main`** → dispara **CD** (imágenes GHCR + deploy, si aplica)
+- [ ] **`main`** → dispara **CD** (imágenes Docker Hub + deploy, si aplica)
 
 ## Historias de usuario cerradas
 

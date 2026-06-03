@@ -1,3 +1,6 @@
+# Producción: imágenes en Docker Hub → <DOCKERHUB_USERNAME>/backend-reportes:<tag>
+# En el servidor: IMAGE_REGISTRY=<tu usuario Docker Hub>, IMAGE_TAG=<sha del PR>
+
 services:
   redis:
     image: redis:7.2.5-alpine

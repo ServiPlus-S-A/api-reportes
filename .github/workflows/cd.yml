@@ -1,3 +1,6 @@
+# CD: build → push a Docker Hub → deploy por SSH (docker compose prod).
+# Secrets en GitHub: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, DEPLOY_* (ver README).
+
 name: CD – ServiPlus
 
 on:
@@ -25,16 +28,12 @@ concurrency:
   group: cd-${{ github.event.pull_request.number || github.run_id }}-${{ inputs.environment || 'staging' }}
   cancel-in-progress: true
 
-env:
-  REGISTRY: ghcr.io
-
 jobs:
   build-and-push:
     name: Build & push (${{ matrix.service }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
       pull-requests: read
     strategy:
       fail-fast: false
@@ -55,23 +54,22 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Login en GitHub Container Registry
+      - name: Login en Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Metadatos de imagen
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}
           tags: |
             type=sha,prefix=
             type=ref,event=pr
 
-      - name: Build y push
+      - name: Build y push a Docker Hub
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -101,9 +99,9 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
-            export IMAGE_REGISTRY="${{ env.REGISTRY }}/${{ github.repository }}"
+            export IMAGE_REGISTRY="${{ secrets.DOCKERHUB_USERNAME }}"
             export IMAGE_TAG="${{ github.event.pull_request.head.sha || github.sha }}"
-            docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin <<< "${{ secrets.GHCR_DEPLOY_TOKEN }}"
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f
