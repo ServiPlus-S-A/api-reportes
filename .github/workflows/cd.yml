@@ -1,107 +1,60 @@
-# CD: build → push a Docker Hub → deploy por SSH (docker compose prod).
-# Secrets en GitHub: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, DEPLOY_* (ver README).
-
-name: CD – ServiPlus
+name: CI/CD Pipeline AWS EC2
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
-    paths:
-      - "backend-reportes/**"
-      - "frontend/**"
-      - "api-gateway/**"
-      - "docker-compose.prod.yml"
-      - ".github/workflows/cd.yml"
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: Entorno de despliegue
-        required: true
-        default: staging
-        type: choice
-        options:
-          - staging
-          - production
-
-concurrency:
-  group: cd-${{ github.event.pull_request.number || github.run_id }}-${{ inputs.environment || 'staging' }}
-  cancel-in-progress: true
+  push:
+    branches: [ "main" ] # Se ejecuta al hacer push a la rama main
 
 jobs:
   build-and-push:
-    name: Build & push (${{ matrix.service }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - service: backend-reportes
-            context: backend-reportes
-            image: backend-reportes
-          - service: frontend
-            context: frontend
-            image: frontend
-          - service: api-gateway
-            context: api-gateway
-            image: api-gateway
     steps:
-      - name: Checkout código
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Login en Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Metadatos de imagen
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}
-          tags: |
-            type=sha,prefix=
-            type=ref,event=pr
-
-      - name: Build y push a Docker Hub
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
+          # 1. Cambiamos el contexto a la carpeta del backend para que Docker encuentre el package.json
+          context: ./backend-reportes
+          
+          # 2. Le indicamos la ruta exacta donde está el Dockerfile
+          file: ./backend-reportes/Dockerfile
+          
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # Aquí usa la variable o el nombre fijo de tu repositorio (ej. serviplus/area_reportes)
+          tags: ${{ secrets.DOCKER_USERNAME }}/area_reportes:latest
 
   deploy:
-    name: Deploy (${{ inputs.environment || 'staging' }})
-    needs: build-and-push
+    needs: build-and-push # Espera a que la imagen se suba correctamente
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'staging' }}
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Desplegar por SSH (docker compose)
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DOCKER_USERNAME
           script: |
-            set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH }}"
-            export IMAGE_REGISTRY="${{ secrets.DOCKERHUB_USERNAME }}"
-            export IMAGE_TAG="${{ github.event.pull_request.head.sha || github.sha }}"
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            docker image prune -f
+            cd ~/deploy
+            
+            # 1. Asegurar que EC2 tenga la variable de entorno para el docker-compose
+            export DOCKER_USERNAME=$DOCKER_USERNAME
+            
+            # 2. Descargar la imagen más reciente de Docker Hub
+            docker pull $DOCKER_USERNAME/area_reportes:latest
+            
+            # 3. Detener los contenedores actuales y levantarlos con la nueva imagen
+            docker compose down
+            docker compose up -d
+            
+            # 4. Limpiar imágenes antiguas (Dangling) para no saturar el almacenamiento de la EC2
+            docker image prune -af
