@@ -1,7 +1,7 @@
 name: CI/CD Pipeline AWS EC2
 
 on:
-  push:
+  pull_request:
     branches: [ "main" ] # Se ejecuta al hacer push a la rama main
 
 jobs:
@@ -20,14 +20,12 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          # 1. Cambiamos el contexto a la carpeta del backend para que Docker encuentre el package.json
           context: ./backend-reportes
-          
-          # 2. Le indicamos la ruta exacta donde está el Dockerfile
+
           file: ./backend-reportes/Dockerfile
           
           push: true
-          # Aquí usa la variable o el nombre fijo de tu repositorio (ej. serviplus/area_reportes)
+
           tags: ${{ secrets.DOCKER_USERNAME }}/area_reportes:latest
 
   deploy:
@@ -56,5 +54,5 @@ jobs:
             docker compose down
             docker compose up -d
             
-            # 4. Limpiar imágenes antiguas (Dangling) para no saturar el almacenamiento de la EC2
+            # 4. Limpiar imágenes antiguas
             docker image prune -af
