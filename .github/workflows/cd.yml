@@ -2,7 +2,7 @@ name: CI/CD Pipeline AWS EC2
 
 on:
   pull_request:
-    branches: [ "main" ] # Se ejecuta al hacer push a la rama main
+    branches: [ "main" ] 
 
 jobs:
   build-and-push:
@@ -32,27 +32,57 @@ jobs:
     needs: build-and-push # Espera a que la imagen se suba correctamente
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copiar docker-compose.prod.yml al EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: DOCKER_USERNAME
+          source: "docker-compose.prod.yml"
+          target: "~/deploy"
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DOCKER_USERNAME,BACKEND_PORT
           script: |
             cd ~/deploy
             
             # 1. Asegurar que EC2 tenga la variable de entorno para el docker-compose
             export DOCKER_USERNAME=$DOCKER_USERNAME
+            export BACKEND_PORT=$BACKEND_PORT
             
             # 2. Descargar la imagen más reciente de Docker Hub
             docker pull $DOCKER_USERNAME/area_reportes:latest
             
             # 3. Detener los contenedores actuales y levantarlos con la nueva imagen
-            docker compose down
-            docker compose up -d
+            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml up -d
             
             # 4. Limpiar imágenes antiguas
             docker image prune -af
+      
+      - name: Health check
+        if: ${{ !env.ACT }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            for i in {1..6}; do
+              curl -sf https://${{ secrets.EC2_HOST }}:${{ secrets.NGINX_PORT }} && echo "Deploy exitoso" && exit 0
+              echo "Intento $i fallido, esperando 5s..."
+              sleep 5
+            done
+            echo "Health check falló - posible problema en el deploy"
+            exit 1
