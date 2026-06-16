@@ -1,109 +1,84 @@
-name: CD – ServiPlus
+name: CI/CD Pipeline AWS EC2
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
-    paths:
-      - "backend-reportes/**"
-      - "frontend/**"
-      - "api-gateway/**"
-      - "docker-compose.prod.yml"
-      - ".github/workflows/cd.yml"
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: Entorno de despliegue
-        required: true
-        default: staging
-        type: choice
-        options:
-          - staging
-          - production
-
-concurrency:
-  group: cd-${{ github.event.pull_request.number || github.run_id }}-${{ inputs.environment || 'staging' }}
-  cancel-in-progress: true
-
-env:
-  REGISTRY: ghcr.io
+  push:
+    branches: ["main"]
 
 jobs:
   build-and-push:
-    name: Build & push (${{ matrix.service }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      pull-requests: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - service: backend-reportes
-            context: backend-reportes
-            image: backend-reportes
-          - service: frontend
-            context: frontend
-            image: frontend
-          - service: api-gateway
-            context: api-gateway
-            image: api-gateway
     steps:
-      - name: Checkout código
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Login en GitHub Container Registry
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Metadatos de imagen
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
-          tags: |
-            type=sha,prefix=
-            type=ref,event=pr
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build y push
-        uses: docker/build-push-action@v6
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.context }}
+          context: ./backend-reportes
+          file: ./backend-reportes/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/area_reportes:latest
+            ${{ secrets.DOCKER_USERNAME }}/area_reportes:${{ github.sha }}
 
   deploy:
-    name: Deploy (${{ inputs.environment || 'staging' }})
     needs: build-and-push
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'staging' }}
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout código
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Desplegar por SSH (docker compose)
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Copiar docker-compose.prod.yml al EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.prod.yml"
+          target: "~/deploy"
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DOCKER_USERNAME,BACKEND_PORT
           script: |
-            set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH }}"
-            export IMAGE_REGISTRY="${{ env.REGISTRY }}/${{ github.repository }}"
-            export IMAGE_TAG="${{ github.event.pull_request.head.sha || github.sha }}"
-            docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin <<< "${{ secrets.GHCR_DEPLOY_TOKEN }}"
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            docker image prune -f
+            cd ~/deploy
+
+            export DOCKER_USERNAME=$DOCKER_USERNAME
+            export BACKEND_PORT=$BACKEND_PORT
+
+            docker pull $DOCKER_USERNAME/area_reportes:latest
+            docker compose -f docker-compose.prod.yml down --remove-orphans || true
+            docker compose -f docker-compose.prod.yml up -d
+
+            sleep 20
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            for i in {1..6}; do
+              curl -f http://localhost:${{ secrets.BACKEND_PORT }}/health && echo "backend-reportes UP" && exit 0
+              echo "Intento $i fallido, esperando 5s..."
+              sleep 5
+            done
+            echo "Health check falló - posible problema en el deploy"
+            exit 1

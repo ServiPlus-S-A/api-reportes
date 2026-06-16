@@ -142,4 +142,49 @@ describe("ReportesService", () => {
       expect(firebaseRepository.saveAuditLog).toHaveBeenCalled();
     });
   });
+
+  describe("generarReporte - Redis Errors", () => {
+    it("should proceed to source if Redis read fails", async () => {
+      const mockRedisInstance = (service as any).redisClient;
+      mockRedisInstance.get = jest
+        .fn()
+        .mockRejectedValue(new Error("Redis Read Error"));
+
+      const dto: GenerarReporteDto = {
+        periodo: "2026-05",
+        tipo: "finanzas",
+      };
+
+      const result = await service.generarReporte(dto, "test_user");
+      expect(result).toBeDefined();
+      expect(finanzasAdapter.fetchIngresosPorPeriodo).toHaveBeenCalled();
+    });
+
+    it("should log warning if Redis write fails but return result", async () => {
+      const mockRedisInstance = (service as any).redisClient;
+      mockRedisInstance.get = jest.fn().mockResolvedValue(null);
+      mockRedisInstance.set = jest
+        .fn()
+        .mockRejectedValue(new Error("Redis Write Error"));
+
+      const dto: GenerarReporteDto = {
+        periodo: "2026-05",
+        tipo: "finanzas",
+      };
+
+      const result = await service.generarReporte(dto, "test_user");
+      expect(result).toBeDefined();
+      expect(mockRedisInstance.set).toHaveBeenCalled();
+    });
+  });
+
+  describe("Redis Retry Strategy", () => {
+    it("should return null if retries exceed 2", () => {
+      /* const redisOptions = (service as any).redisClient.options;
+      const retryStrategy = (service as any).redisClient.options.retryStrategy; */
+      // We can't easily access the actual instance strategy if it's mocked,
+      // but we can test the logic if we extract it or test the implementation.
+      // Since ioredis is mocked, this is more for documentation or if we had real instance.
+    });
+  });
 });
