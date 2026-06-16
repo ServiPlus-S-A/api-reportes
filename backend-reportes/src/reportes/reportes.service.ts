@@ -1,133 +1,155 @@
-import { Injectable, Logger } from "@nestjs/common";
-import Redis from "ioredis";
-import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
-import { GenerarReporteDto } from "./dto/generar-reporte.dto";
-import { ReporteData } from "./interfaces/reporte.interface";
+import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
+import { ClientesAdapter } from "./adapters/clientes.adapter";
+import { ServiciosAdapter } from "./adapters/servicios.adapter";
+import { ConsultoresAdapter } from "./adapters/consultores.adapter";
+import {
+  JwtPayloadData,
+} from "./interfaces/detalle-solicitud.interface";
+import {
+  ConsultorResumenDto,
+  DetalleSolicitudResponseDto,
+} from "./dto/detalle-solicitud-response.dto";
 
 @Injectable()
 export class ReportesService {
-  private readonly logger = new Logger(ReportesService.name);
-  private redisClient: Redis | null = null;
-
   constructor(
-    private readonly finanzasAdapter: FinanzasAdapter,
     private readonly firebaseRepository: FirebaseReporteRepository,
-  ) {
-    const redisHost = process.env.REDIS_HOST || "localhost";
-    const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10);
+    private readonly solicitudesAdapter: SolicitudesAdapter,
+    private readonly clientesAdapter: ClientesAdapter,
+    private readonly serviciosAdapter: ServiciosAdapter,
+    private readonly consultoresAdapter: ConsultoresAdapter,
+  ) {}
 
-    try {
-      this.redisClient = new Redis({
-        host: redisHost,
-        port: redisPort,
-        maxRetriesPerRequest: 1,
-        retryStrategy: (times) => {
-          if (times > 2) {
-            this.logger.warn(
-              "Redis connection failed too many times. Running without caching.",
-            );
-            return null; // Stop retrying
-          }
-          return 500;
-        },
-      });
+  async obtenerDetalleSolicitudCompletada(
+    solicitudId: string,
+    user: JwtPayloadData,
+    ip: string,
+    page = 1,
+    pageSize = 10,
+  ): Promise<DetalleSolicitudResponseDto> {
+    const solicitud =
+      await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
 
-      this.redisClient.on("error", (err) => {
-        this.logger.warn(
-          `Redis Cache Connection Error: ${err.message}. Bypassing Redis cache.`,
-        );
-      });
-    } catch (e) {
-      this.logger.error(`Redis Initialization Error: ${e.message}`);
+    if (!solicitud) {
+      await this.registrarAccesoDetalle(solicitudId, user.sub, ip, false);
+      throw new NotFoundException("No se encontro la solicitud solicitada.");
     }
+
+    if (solicitud.estado !== "completada") {
+      await this.registrarAccesoDetalle(solicitudId, user.sub, ip, false);
+      throw new BadRequestException(
+        "Solo se permite consultar solicitudes completadas.",
+      );
+    }
+
+    if (!user.unidadIds.includes(solicitud.unidadId)) {
+      await this.registrarAccesoDetalle(solicitudId, user.sub, ip, false);
+      throw new ForbiddenException(
+        "Permisos insuficientes para visualizar este informe de costos",
+      );
+    }
+
+    const warnings: string[] = [];
+
+    const clientePromise = this.clientesAdapter
+      .obtenerClientePorId(solicitud.clienteId)
+      .catch(() => {
+        warnings.push(
+          "Advertencia: Algunos datos del cliente o servicio no pudieron ser recuperados desde el servidor central",
+        );
+        return null;
+      });
+
+    const servicioPromise = this.serviciosAdapter
+      .obtenerServicioPorId(solicitud.servicioId)
+      .catch(() => {
+        if (!warnings.length) {
+          warnings.push(
+            "Advertencia: Algunos datos del cliente o servicio no pudieron ser recuperados desde el servidor central",
+          );
+        }
+        return null;
+      });
+
+    const [cliente, servicio, consultores] = await Promise.all([
+      clientePromise,
+      servicioPromise,
+      this.consultoresAdapter.obtenerConsultoresPorSolicitud(solicitudId),
+    ]);
+
+    const total = consultores.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    const start = (page - 1) * pageSize;
+    const consultoresPaginados = consultores.slice(start, start + pageSize);
+
+    await this.registrarAccesoDetalle(solicitudId, user.sub, ip, true);
+
+    return {
+      id: solicitud.id,
+      servicio: {
+        nombre: this.normalizarTexto(
+          servicio?.nombre ?? solicitud.servicioNombre ?? null,
+        ),
+        tipo: this.normalizarTexto(
+          servicio?.tipo ?? solicitud.servicioTipo ?? null,
+        ),
+      },
+      cliente: this.normalizarTexto(
+        cliente?.nombre ?? solicitud.clienteNombre ?? null,
+      ),
+      gananciaGenerada: solicitud.gananciaGenerada ?? 0,
+      fechaInicio: this.normalizarTexto(solicitud.fechaInicio),
+      fechaFin: this.normalizarTexto(solicitud.fechaFin),
+      consultorApertura: this.normalizarConsultor(solicitud.consultorApertura),
+      consultorCierre: this.normalizarConsultor(solicitud.consultorCierre),
+      consultoresIntervinientes: consultoresPaginados.map((consultor) =>
+        this.normalizarConsultor(consultor),
+      ),
+      metadata: {
+        warnings,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages,
+        },
+      },
+    };
   }
 
-  // [Pattern: Cache-Aside]
-  async generarReporte(
-    dto: GenerarReporteDto,
-    usuario: string,
-  ): Promise<ReporteData> {
-    const cacheKey = `reporte:${dto.tipo}:${dto.periodo}`;
+  private normalizarTexto(value: string | null): string {
+    return value?.trim() ? value : "N/A";
+  }
 
-    // 1. Try reading from Cache (Redis)
-    if (this.redisClient && this.redisClient.status === "ready") {
-      try {
-        const cachedData = await this.redisClient.get(cacheKey);
-        if (cachedData) {
-          this.logger.log(`Cache Hit for key: ${cacheKey}`);
-          const parseResult = JSON.parse(cachedData) as ReporteData;
-          // Audit cached retrieval as well
-          await this.firebaseRepository.saveAuditLog({
-            ...parseResult,
-            generadoPor: usuario,
-          });
-          return parseResult;
-        }
-      } catch (cacheError) {
-        this.logger.warn(
-          `Failed to read cache: ${cacheError.message}. Proceeding to source.`,
-        );
-      }
-    }
-
-    this.logger.log(
-      `Cache Miss for key: ${cacheKey}. Generating fresh report...`,
-    );
-
-    // 2. Fetch fresh data from adapter
-    const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(
-      dto.periodo,
-    );
-
-    // 3. Process data (ISO 25010: Functional suitability and correctness)
-    let totalIngresos = 0;
-    let totalEgresos = 0;
-
-    rawData.forEach((item) => {
-      const amount = Number(item.monto) || 0;
-      if (item.tipo === "ingreso") {
-        totalIngresos += amount;
-      } else if (item.tipo === "egreso") {
-        totalEgresos += amount;
-      }
-    });
-
-    const balance = totalIngresos - totalEgresos;
-
-    const nuevoReporte: ReporteData = {
-      id: Math.random().toString(36).substring(2, 11),
-      periodo: dto.periodo,
-      tipo: dto.tipo,
-      totalIngresos,
-      totalEgresos,
-      balance,
-      generadoPor: usuario,
-      fechaCreacion: new Date().toISOString(),
-      detalles: rawData,
+  private normalizarConsultor(
+    consultor: ConsultorResumenDto | null,
+  ): ConsultorResumenDto {
+    return {
+      id: consultor?.id ?? "N/A",
+      nombre: this.normalizarTexto(consultor?.nombre ?? null),
     };
+  }
 
-    // 4. Save to Cache
-    if (this.redisClient && this.redisClient.status === "ready") {
-      try {
-        // Set TTL to 1 hour (3600 seconds)
-        await this.redisClient.set(
-          cacheKey,
-          JSON.stringify(nuevoReporte),
-          "EX",
-          3600,
-        );
-        this.logger.log(`Fresh report saved to cache under key: ${cacheKey}`);
-      } catch (cacheWriteError) {
-        this.logger.warn(
-          `Failed to save report to cache: ${cacheWriteError.message}`,
-        );
-      }
-    }
-
-    // 5. Append to Audit Logs (Security / Auditing)
-    await this.firebaseRepository.saveAuditLog(nuevoReporte);
-
-    return nuevoReporte;
+  private async registrarAccesoDetalle(
+    solicitudId: string,
+    userId: string,
+    ip: string,
+    allowed: boolean,
+  ): Promise<void> {
+    await this.firebaseRepository.saveAccessLog({
+      action: "VIEW_SOLICITUD_DETALLE",
+      solicitudId,
+      userId,
+      timestamp: new Date().toISOString(),
+      ip,
+      allowed,
+    });
   }
 }

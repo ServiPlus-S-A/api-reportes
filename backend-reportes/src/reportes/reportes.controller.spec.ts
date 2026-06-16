@@ -1,12 +1,14 @@
 import { Test, TestingModule } from "@nestjs/testing";
+import { JwtReportesService } from "./auth/jwt-reportes.service";
 import { ReportesController } from "./reportes.controller";
 import { ReportesService } from "./reportes.service";
-import { GenerarReporteDto } from "./dto/generar-reporte.dto";
-import { BadRequestException } from "@nestjs/common";
 
 describe("ReportesController", () => {
   let controller: ReportesController;
-  let service: ReportesService;
+  let service: {
+    obtenerDetalleSolicitudCompletada: jest.Mock;
+  };
+  let jwtService: { validateToken: jest.Mock };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -15,54 +17,70 @@ describe("ReportesController", () => {
         {
           provide: ReportesService,
           useValue: {
-            generarReporte: jest.fn(),
+            obtenerDetalleSolicitudCompletada: jest.fn().mockResolvedValue({
+              id: "REQ-12345",
+            }),
+          },
+        },
+        {
+          provide: JwtReportesService,
+          useValue: {
+            validateToken: jest.fn().mockReturnValue({
+              sub: "coord-1",
+              role: "coordinador",
+              unidadIds: ["reportes-centro"],
+            }),
           },
         },
       ],
     }).compile();
 
     controller = module.get<ReportesController>(ReportesController);
-    service = module.get<ReportesService>(ReportesService);
+    service = module.get(ReportesService);
+    jwtService = module.get(JwtReportesService);
   });
 
-  it("should be defined", () => {
-    expect(controller).toBeDefined();
+  it("delegates detalle request to service using jwt payload and request ip", async () => {
+    await controller.obtenerDetalleSolicitud(
+      "REQ-12345",
+      { page: 1, pageSize: 10 },
+      {
+        ip: "127.0.0.1",
+        headers: { authorization: "Bearer test-token" },
+        socket: { remoteAddress: "127.0.0.1" },
+      } as any,
+    );
+
+    expect(jwtService.validateToken).toHaveBeenCalledWith("Bearer test-token");
+    expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
+      "REQ-12345",
+      {
+        sub: "coord-1",
+        role: "coordinador",
+        unidadIds: ["reportes-centro"],
+      },
+      "127.0.0.1",
+      1,
+      10,
+    );
   });
 
-  describe("generarReporte", () => {
-    const dto: GenerarReporteDto = {
-      periodo: "2026-05",
-      tipo: "finanzas",
-    };
+  it("uses socket remote address when req.ip is unavailable", async () => {
+    await controller.obtenerDetalleSolicitud(
+      "REQ-12345",
+      {},
+      {
+        headers: { authorization: "Bearer test-token" },
+        socket: { remoteAddress: "10.0.0.5" },
+      } as any,
+    );
 
-    it("should return the result from the service", async () => {
-      const expectedResult = { id: "1", balance: 100 } as any;
-      jest.spyOn(service, "generarReporte").mockResolvedValue(expectedResult);
-
-      const result = await controller.generarReporte(dto, "user-123");
-      expect(result).toBe(expectedResult);
-      expect(service.generarReporte).toHaveBeenCalledWith(dto, "user-123");
-    });
-
-    it("should use default user if userId header is missing", async () => {
-      const expectedResult = { id: "1" } as any;
-      jest.spyOn(service, "generarReporte").mockResolvedValue(expectedResult);
-
-      await controller.generarReporte(dto, undefined);
-      expect(service.generarReporte).toHaveBeenCalledWith(
-        dto,
-        "anonymous_system_user",
-      );
-    });
-
-    it("should throw BadRequestException if service fails", async () => {
-      jest
-        .spyOn(service, "generarReporte")
-        .mockRejectedValue(new Error("Service Error"));
-
-      await expect(controller.generarReporte(dto, "user-1")).rejects.toThrow(
-        BadRequestException,
-      );
-    });
+    expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
+      "REQ-12345",
+      expect.any(Object),
+      "10.0.0.5",
+      1,
+      10,
+    );
   });
 });
