@@ -1,0 +1,41 @@
+name: Qodo PR Agent - ServiPlus
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created] # Permite activar comandos manualmente escribiendo /improve o /review en el chat del PR
+
+jobs:
+  qodo_review_job:
+    # Evita que el bot se responda a sí mismo o se ejecute en borradores (drafts)
+    if: ${{ github.event.sender.type != 'Bot' && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+
+    steps:
+      - name: Ejecutar Qodo PR Agent
+        uses: the-pr-agent/pr-agent@main
+        env:
+          # Autenticación requerida
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Configuración del modelo (puedes cambiarlo por gpt-4o para mayor precisión)
+          config.model: "gpt-4o-mini"
+
+          # Automatizaciones clave para comentarios inline en los cambios
+          github_action_config.auto_review: "true" # Resumen general del PR
+          github_action_config.auto_improve: "true" # ¡ESTO genera los comentarios directamente en el Diff!
+
+          # Forzar a que las sugerencias de código sean directamente aplicables (Commitable)
+          pr_code_suggestions.commitable_code_suggestions: "true"
+          pr_reviewer.inline_code_comments: "true"
+
+          # Limitar cantidad de sugerencias para evitar ruido en el PR
+          pr_code_suggestions.num_code_suggestions_per_chunk: "4"
