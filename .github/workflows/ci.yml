@@ -54,23 +54,26 @@ jobs:
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
-
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: backend-reportes/package-lock.json
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: backend-reportes/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('backend-reportes/package-lock.json') }}
 
       - name: Instalar dependencias
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Lint (ESLint --fix)
-        run: npx eslint "{src,apps,libs,test}/**/*.ts" --fix
-
-      - name: Formato (Prettier check)
-        run: npx prettier --check "src/**/*.ts" "test/**/*.ts"
-
-      - name: Tipos (tsc)
-        run: npx tsc --noEmit
+      - name: Verificaciones estáticas paralelas (Lint, Format, Tsc)
+        run: |
+          npx eslint "{src,apps,libs,test}/**/*.ts" --fix &
+          npx prettier --check "src/**/*.ts" "test/**/*.ts" &
+          npx tsc --noEmit &
+          wait
 
       - name: Build (Nest)
         run: npm run build

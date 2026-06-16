@@ -1,11 +1,8 @@
-# Producción: imágenes en Docker Hub → <DOCKERHUB_USERNAME>/backend-reportes:<tag>
-# En el servidor: IMAGE_REGISTRY=<tu usuario Docker Hub>, IMAGE_TAG=<sha del PR>
-
 services:
   redis:
     image: redis:7.2.5-alpine
     container_name: redis_cache
-    restart: unless-stopped
+    restart: always
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -14,55 +11,19 @@ services:
     networks:
       - serviplus_net
 
-  api-gateway:
-    image: ${IMAGE_REGISTRY}/api-gateway:${IMAGE_TAG}
-    container_name: api_gateway
-    restart: unless-stopped
+  backend:
+    image: ${DOCKER_USERNAME}/area_reportes:latest
+    container_name: api_backend
+    restart: always
     ports:
-      - "${GATEWAY_PORT}:${GATEWAY_PORT}"
-    environment:
-      - PORT=${GATEWAY_PORT}
-      - BACKEND_URL=http://backend-reportes:${BACKEND_PORT}
-      - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      backend-reportes:
-        condition: service_healthy
-    networks:
-      - serviplus_net
-
-  backend-reportes:
-    image: ${IMAGE_REGISTRY}/backend-reportes:${IMAGE_TAG}
-    container_name: backend_reportes
-    restart: unless-stopped
-    ports:
-      - "${BACKEND_PORT}:${BACKEND_PORT}"
+      - "127.0.0.1:${BACKEND_PORT}:${BACKEND_PORT}"
     environment:
       - PORT=${BACKEND_PORT}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
     depends_on:
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:${BACKEND_PORT}/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    networks:
-      - serviplus_net
-
-  frontend:
-    image: ${IMAGE_REGISTRY}/frontend:${IMAGE_TAG}
-    container_name: frontend_app
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-    depends_on:
-      api-gateway:
-        condition: service_started
     networks:
       - serviplus_net
 
