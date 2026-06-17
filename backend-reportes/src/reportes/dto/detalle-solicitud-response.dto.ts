@@ -53,13 +53,13 @@ export class DetalleSolicitudResponseDto {
   @ApiProperty({ example: "Industrias Nova SAS" })
   cliente: string;
 
-  @ApiProperty({ example: 3250000 })
-  gananciaGenerada: number;
+  @ApiProperty({ example: "$3,250,000.00" })
+  gananciaGenerada: string;
 
-  @ApiProperty({ example: "2026-05-04T08:00:00Z" })
+  @ApiProperty({ example: "04/05/2026 08:00" })
   fechaInicio: string;
 
-  @ApiProperty({ example: "2026-05-06T17:30:00Z" })
+  @ApiProperty({ example: "06/05/2026 17:30" })
   fechaFin: string;
 
   @ApiProperty({ type: ConsultorResumenDto })

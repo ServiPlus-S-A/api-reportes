@@ -10,10 +10,18 @@ export class JwtReportesService {
     }
 
     const token = authorization.replace("Bearer ", "").trim();
-    const secret = process.env.JWT_SECRET || "dev-serviplus-secret";
+    const secret = process.env.JWT_SECRET;
+
+    if (!secret) {
+      throw new UnauthorizedException("JWT_SECRET no configurado.");
+    }
 
     try {
       const payload = jwt.verify(token, secret) as jwt.JwtPayload;
+      if (!payload.sub) {
+        throw new UnauthorizedException("Token JWT sin usuario.");
+      }
+
       const unidadIds = Array.isArray(payload.unidadIds)
         ? payload.unidadIds.map((value) => String(value))
         : payload.unidadId
