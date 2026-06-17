@@ -57,10 +57,9 @@ export async function generarPDF(atenciones: AtencionDto[]): Promise<Buffer> {
 
         doc
           .text(`ID: ${atencion.id}`, { indent: 10 })
-          .text(
-            `Descripción: ${atencion.descripcion.substring(0, 150)}`,
-            { indent: 10 },
-          )
+          .text(`Descripción: ${atencion.descripcion.substring(0, 150)}`, {
+            indent: 10,
+          })
           .text(`Lugar: ${atencion.lugar}`, { indent: 10 })
           .text(`Fecha/Hora: ${atencion.fecha}`, { indent: 10 })
           .text(`Consultor: ${atencion.nombreConsultor}`, { indent: 10 });
@@ -75,9 +74,7 @@ export async function generarPDF(atenciones: AtencionDto[]): Promise<Buffer> {
   });
 }
 
-export async function generarExcel(
-  atenciones: AtencionDto[],
-): Promise<Buffer> {
+export async function generarExcel(atenciones: AtencionDto[]): Promise<Buffer> {
   const workbook = new Workbook();
   const worksheet = workbook.addWorksheet("Atenciones");
 

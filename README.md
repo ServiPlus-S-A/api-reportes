@@ -171,7 +171,20 @@ Accede en: **http://localhost:3000** (puerto por defecto de Next.js en `dev`; en
 docker compose up -d redis backend-reportes frontend
 ```
 
-Asegurate de que `NEXT_PUBLIC_API_URL` en `.env` sea alcanzable desde el navegador (IP/host publico o `localhost` segun el caso).
+**Acceso a la aplicación:**
+- **Frontend (UI):** Abre **http://localhost:3001** (o el puerto que definas como `FRONTEND_PORT` en `.env`).
+  > *Nota: Asegúrate de que en tu `docker-compose.yml`, el mapeo de puertos del frontend asocie el puerto del host al puerto 3000 interno del contenedor (ej: `"${FRONTEND_PORT}:3000"`)*.
+- **Backend API Docs (Swagger):** Abre **http://localhost:3000/api/docs** para ver e interactuar con la documentación de la API.
+
+** Nota sobre actualización de los contenedores:**
+Al realizar cambios en el código base (como habilitar Swagger en `main.ts`), es **obligatorio** reconstruir la imagen del contenedor agregando la opción `--build`. Si omites esto, Docker levantará la versión anterior de tu código y obtendrás errores (como un `404 Not Found` en Swagger).
+
+Comando correcto después de modificar el código:
+```bash
+docker compose up -d --build backend-reportes
+```
+
+Asegúrate de que `NEXT_PUBLIC_API_URL` en `.env` sea alcanzable desde el navegador (IP/host publico o `localhost` segun el caso).
 
 ## Comandos utiles
 

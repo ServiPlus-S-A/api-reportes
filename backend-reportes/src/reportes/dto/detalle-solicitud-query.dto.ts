@@ -5,7 +5,8 @@ import { IsInt, IsOptional, Max, Min } from "class-validator";
 export class DetalleSolicitudQueryDto {
   @ApiPropertyOptional({
     example: 1,
-    description: "Numero de pagina para la lista de consultores intervinientes.",
+    description:
+      "Numero de pagina para la lista de consultores intervinientes.",
     default: 1,
   })
   @IsOptional()

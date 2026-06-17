@@ -41,7 +41,7 @@ services:
       context: ./frontend
     container_name: frontend_app
     ports:
-      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+      - "${FRONTEND_PORT}:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:${BACKEND_PORT}
     networks:

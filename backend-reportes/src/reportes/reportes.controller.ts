@@ -1,11 +1,4 @@
-import {
-  Get,
-  Param,
-  Query,
-  Req,
-  Controller,
-  Res,
-} from "@nestjs/common";
+import { Get, Param, Query, Req, Controller, Res } from "@nestjs/common";
 import { Request, Response } from "express";
 import {
   ApiBadRequestResponse,
@@ -127,8 +120,7 @@ export class ReportesController {
     description: "No se encontro la solicitud solicitada.",
   })
   @ApiBadRequestResponse({
-    description:
-      ">500 registros con formato PDF o solicitud no completada.",
+    description: ">500 registros con formato PDF o solicitud no completada.",
   })
   @ApiInternalServerErrorResponse({
     description: "Timeout o error al generar el archivo de exportación.",

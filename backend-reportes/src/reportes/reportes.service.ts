@@ -11,9 +11,7 @@ import { ClientesAdapter } from "./adapters/clientes.adapter";
 import { ServiciosAdapter } from "./adapters/servicios.adapter";
 import { ConsultoresAdapter } from "./adapters/consultores.adapter";
 import { AtencionesAdapter } from "./adapters/atenciones.adapter";
-import {
-  JwtPayloadData,
-} from "./interfaces/detalle-solicitud.interface";
+import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
 import { AtencionRaw } from "./interfaces/atenciones.interface";
 import {
   ConsultorResumenDto,
@@ -186,9 +184,7 @@ export class ReportesService {
 
     try {
       atenciones =
-        await this.atencionesAdapter.obtenerAtencionesPorSolicitud(
-          solicitudId,
-        );
+        await this.atencionesAdapter.obtenerAtencionesPorSolicitud(solicitudId);
     } catch (error) {
       warnings.push(
         "Advertencia: No se pudieron cargar las atenciones asociadas",
@@ -279,9 +275,7 @@ export class ReportesService {
 
     try {
       atenciones =
-        await this.atencionesAdapter.obtenerAtencionesPorSolicitud(
-          solicitudId,
-        );
+        await this.atencionesAdapter.obtenerAtencionesPorSolicitud(solicitudId);
     } catch (error) {
       throw new InternalServerErrorException(
         "Error al recuperar las atenciones para exportar",
@@ -302,15 +296,9 @@ export class ReportesService {
       let buffer: Buffer;
 
       if (formato === "pdf") {
-        buffer = await withTimeout(
-          generarPDF(atencioneNormalizadas),
-          5000,
-        );
+        buffer = await withTimeout(generarPDF(atencioneNormalizadas), 5000);
       } else {
-        buffer = await withTimeout(
-          generarExcel(atencioneNormalizadas),
-          5000,
-        );
+        buffer = await withTimeout(generarExcel(atencioneNormalizadas), 5000);
       }
 
       await this.registrarAccesoAtencion(

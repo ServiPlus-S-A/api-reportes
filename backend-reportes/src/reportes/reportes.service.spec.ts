@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { ClientesAdapter } from "./adapters/clientes.adapter";
 import { ConsultoresAdapter } from "./adapters/consultores.adapter";
@@ -141,7 +146,9 @@ describe("ReportesService", () => {
         allowed: true,
       }),
     );
-    expect(consultoresAdapter.obtenerConsultoresPorSolicitud).toHaveBeenCalled();
+    expect(
+      consultoresAdapter.obtenerConsultoresPorSolicitud,
+    ).toHaveBeenCalled();
   });
 
   it("returns partial data with warnings when enrichments fail", async () => {
@@ -345,7 +352,9 @@ describe("ReportesService", () => {
 
       result.atenciones.forEach((atencion) => {
         if (atencion.fecha !== "N/A") {
-          expect(atencion.fecha).toMatch(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/);
+          expect(atencion.fecha).toMatch(
+            /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/,
+          );
         }
       });
     });

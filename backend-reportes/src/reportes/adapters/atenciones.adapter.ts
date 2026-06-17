@@ -29,8 +29,12 @@ export class AtencionesAdapter {
                 : i % 5 === 3
                   ? "Oficina Este, Barranquilla"
                   : "Oficina Oeste, Bucaramanga",
-        fechaHora: new Date(2026, 4, i % 30 === 0 ? 1 : i % 30, 8 + (i % 12))
-          .toISOString(),
+        fechaHora: new Date(
+          2026,
+          4,
+          i % 30 === 0 ? 1 : i % 30,
+          8 + (i % 12),
+        ).toISOString(),
         consultorId: `con-${String((i % 12) + 1).padStart(3, "0")}`,
         nombreConsultor:
           i % 12 === 1

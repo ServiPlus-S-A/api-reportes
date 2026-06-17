@@ -9,6 +9,8 @@ describe("SolicitudesAdapter", () => {
   });
 
   it("returns null for unknown solicitud", async () => {
-    await expect(adapter.obtenerSolicitudPorId("REQ-00000")).resolves.toBeNull();
+    await expect(
+      adapter.obtenerSolicitudPorId("REQ-00000"),
+    ).resolves.toBeNull();
   });
 });
