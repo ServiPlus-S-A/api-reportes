@@ -1,14 +1,13 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { FinanzasAdapter } from "./finanzas.adapter";
-import axios from "axios";
-
-jest.mock("axios");
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe("FinanzasAdapter", () => {
   let adapter: FinanzasAdapter;
+  const fetchMock = jest.fn();
 
   beforeEach(async () => {
+    global.fetch = fetchMock;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [FinanzasAdapter],
     }).compile();
@@ -18,45 +17,43 @@ describe("FinanzasAdapter", () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    delete process.env.EXTERNAL_FINANZAS_URL;
   });
 
   it("should be defined", () => {
     expect(adapter).toBeDefined();
   });
 
-  describe("fetchIngresosPorPeriodo", () => {
-    const periodo = "2026-05";
+  it("should return data from axios when URL is provided", async () => {
+    process.env.EXTERNAL_FINANZAS_URL = "http://external-api.com";
+    const mockData = [{ id: "1", monto: 100, tipo: "ingreso" }];
+    fetchMock.mockResolvedValue({ json: jest.fn().mockResolvedValue(mockData) });
 
-    it("should return data from axios when URL is provided", async () => {
-      process.env.EXTERNAL_FINANZAS_URL = "http://external-api.com";
-      const mockData = [{ id: "1", monto: 100, tipo: "ingreso" }];
-      mockedAxios.get.mockResolvedValue({ data: mockData });
+    const result = await adapter.fetchIngresosPorPeriodo("2026-05");
 
-      const result = await adapter.fetchIngresosPorPeriodo(periodo);
+    expect(result).toBe(mockData);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://external-api.com?periodo=2026-05",
+      { signal: expect.any(AbortSignal) },
+    );
+  });
 
-      expect(result).toBe(mockData);
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        `http://external-api.com?periodo=${periodo}`,
-        { timeout: 3000 },
-      );
-    });
+  it("should return fallback data if axios fails", async () => {
+    process.env.EXTERNAL_FINANZAS_URL = "http://external-api.com";
+    fetchMock.mockRejectedValue(new Error("Network Error"));
 
-    it("should return fallback data if axios fails", async () => {
-      process.env.EXTERNAL_FINANZAS_URL = "http://external-api.com";
-      mockedAxios.get.mockRejectedValue(new Error("Network Error"));
+    const result = await adapter.fetchIngresosPorPeriodo("2026-05");
 
-      const result = await adapter.fetchIngresosPorPeriodo(periodo);
+    expect(result).toHaveLength(5);
+    expect(result[0]).toHaveProperty("descripcion");
+  });
 
-      expect(result).toHaveLength(5);
-      expect(result[0]).toHaveProperty("descripcion");
-    });
+  it("should return fallback data if URL is empty", async () => {
+    process.env.EXTERNAL_FINANZAS_URL = "";
 
-    it("should return fallback data if URL is empty", async () => {
-      process.env.EXTERNAL_FINANZAS_URL = "";
-      const result = await adapter.fetchIngresosPorPeriodo(periodo);
+    const result = await adapter.fetchIngresosPorPeriodo("2026-05");
 
-      expect(result).toHaveLength(5);
-      expect(mockedAxios.get).not.toHaveBeenCalled();
-    });
+    expect(result).toHaveLength(5);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

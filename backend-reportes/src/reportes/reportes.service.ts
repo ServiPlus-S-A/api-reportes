@@ -1,28 +1,52 @@
-import { Injectable, Logger } from "@nestjs/common";
-import Redis from "ioredis";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { AtencionesAdapter } from "./adapters/atenciones.adapter";
+import { ClientesAdapter } from "./adapters/clientes.adapter";
+import { ConsultoresAdapter } from "./adapters/consultores.adapter";
 import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import { ServiciosAdapter } from "./adapters/servicios.adapter";
 import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
-import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
-import { GenerarReporteDto } from "./dto/generar-reporte.dto";
-import { TiempoPromedioDto } from "./dto/tiempo-promedio";
+import { AtencionRaw } from "./interfaces/atenciones.interface";
+import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
 import { PromedioData } from "./interfaces/promedioInterface";
 import { ReporteData } from "./interfaces/reporte.interface";
+import { AtencionDto, AtencionesResponseDto } from "./dto/atencion-response.dto";
+import {
+  ConsultorResumenDto,
+  DetalleSolicitudResponseDto,
+} from "./dto/detalle-solicitud-response.dto";
+import { GenerarReporteDto } from "./dto/generar-reporte.dto";
+import { TiempoPromedioDto } from "./dto/tiempo-promedio";
+import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
+import { generarExcel, generarPDF } from "./utils/export.util";
+import { withTimeout } from "./utils/timeout.util";
 
 @Injectable()
 export class ReportesService {
   private readonly logger = new Logger(ReportesService.name);
-  private redisClient: Redis | null = null;
+  private redisClient: any = null;
 
   constructor(
     private readonly finanzasAdapter: FinanzasAdapter,
-    private readonly solicitudesAdapter: SolicitudesAdapter,
     private readonly firebaseRepository: FirebaseReporteRepository,
+    private readonly solicitudesAdapter: SolicitudesAdapter,
+    private readonly clientesAdapter: ClientesAdapter,
+    private readonly serviciosAdapter: ServiciosAdapter,
+    private readonly consultoresAdapter: ConsultoresAdapter,
+    private readonly atencionesAdapter: AtencionesAdapter,
   ) {
     const redisHost = process.env.REDIS_HOST || "localhost";
     const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10);
 
     try {
-      this.redisClient = new Redis({
+      const RedisClient = require("ioredis");
+      this.redisClient = new RedisClient({
         host: redisHost,
         port: redisPort,
         maxRetriesPerRequest: 1,
@@ -42,9 +66,11 @@ export class ReportesService {
           `Redis Cache Connection Error: ${err.message}. Bypassing Redis cache.`,
         );
       });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      this.logger.error(`Redis Initialization Error: ${message}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("Cannot find module 'ioredis'")) {
+        this.logger.error(`Redis Initialization Error: ${message}`);
+      }
     }
   }
 
@@ -89,7 +115,7 @@ export class ReportesService {
 
     const duracionesHoras = solicitudesFiltradas.map((solicitud) => {
       const inicio = new Date(solicitud.fechaCreacion).getTime();
-      const fin = new Date(solicitud.fechaCompletada!).getTime();
+      const fin = new Date(solicitud.fechaCompletada).getTime();
       return (fin - inicio) / (1000 * 60 * 60);
     });
 
@@ -97,20 +123,306 @@ export class ReportesService {
       duracionesHoras.reduce((acc, value) => acc + value, 0) /
       duracionesHoras.length;
     const promedioDias = promedioHoras / 24;
-
-    const promedioTexto = `${Math.floor(promedioDias)} día(s), ${Math.round(
-      promedioHoras % 24,
-    )} hora(s)`;
-
-    const historicoUltimos6Meses = await this.generarHistorico(6);
+    const dias = Math.floor(promedioDias);
+    const horas = Math.round(promedioHoras % 24);
+    const promedioTexto = `${dias} ${dias === 1 ? "día" : "días"}, ${horas} ${
+      horas === 1 ? "hora" : "horas"
+    }`;
 
     return {
       promedio: Number(promedioHoras.toFixed(2)),
       unidad: "horas",
       promedioTexto,
       solicitudesProcesadas: solicitudesFiltradas.length,
-      historicoUltimos6Meses,
+      historicoUltimos6Meses: await this.generarHistorico(6),
     };
+  }
+
+  async generarReporte(
+    dto: GenerarReporteDto,
+    usuario: string,
+  ): Promise<ReporteData> {
+    const cacheKey = `reporte:${dto.tipo}:${dto.periodo}`;
+
+    if (this.redisClient && this.redisClient.status === "ready") {
+      try {
+        const cachedData = await this.redisClient.get(cacheKey);
+        if (cachedData) {
+          this.logger.log(`Cache Hit for key: ${cacheKey}`);
+          const parseResult = JSON.parse(cachedData) as ReporteData;
+          await this.firebaseRepository.saveAuditLog({
+            ...parseResult,
+            generadoPor: usuario,
+          });
+          return parseResult;
+        }
+      } catch (cacheError) {
+        const message =
+          cacheError instanceof Error ? cacheError.message : String(cacheError);
+        this.logger.warn(
+          `Failed to read cache: ${message}. Proceeding to source.`,
+        );
+      }
+    }
+
+    const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(
+      dto.periodo,
+    );
+
+    let totalIngresos = 0;
+    let totalEgresos = 0;
+
+    rawData.forEach((item) => {
+      const amount = Number(item.monto) || 0;
+      if (item.tipo === "ingreso") {
+        totalIngresos += amount;
+      } else if (item.tipo === "egreso") {
+        totalEgresos += amount;
+      }
+    });
+
+    const nuevoReporte: ReporteData = {
+      id: Math.random().toString(36).substring(2, 11),
+      periodo: dto.periodo,
+      tipo: dto.tipo,
+      totalIngresos,
+      totalEgresos,
+      balance: totalIngresos - totalEgresos,
+      generadoPor: usuario,
+      fechaCreacion: new Date().toISOString(),
+      detalles: rawData,
+    };
+
+    if (this.redisClient && this.redisClient.status === "ready") {
+      try {
+        await this.redisClient.set(
+          cacheKey,
+          JSON.stringify(nuevoReporte),
+          "EX",
+          3600,
+        );
+      } catch (cacheWriteError) {
+        const message =
+          cacheWriteError instanceof Error
+            ? cacheWriteError.message
+            : String(cacheWriteError);
+        this.logger.warn(`Failed to save report to cache: ${message}`);
+      }
+    }
+
+    await this.firebaseRepository.saveAuditLog(nuevoReporte);
+    return nuevoReporte;
+  }
+
+  async obtenerDetalleSolicitudCompletada(
+    solicitudId: string,
+    user: JwtPayloadData,
+    ip: string,
+    page = 1,
+    pageSize = 10,
+  ): Promise<DetalleSolicitudResponseDto> {
+    const solicitud =
+      await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
+
+    if (!solicitud) {
+      await this.registrarAccesoDetalle(solicitudId, user.sub, ip, false);
+      throw new NotFoundException("No se encontro la solicitud solicitada.");
+    }
+
+    if (solicitud.estado !== "completada") {
+      await this.registrarAccesoDetalle(solicitudId, user.sub, ip, false);
+      throw new BadRequestException(
+        "Solo se permite consultar solicitudes completadas.",
+      );
+    }
+
+    if (!user.unidadIds.includes(solicitud.unidadId)) {
+      await this.registrarAccesoDetalle(solicitudId, user.sub, ip, false);
+      throw new ForbiddenException(
+        "Permisos insuficientes para visualizar este informe de costos",
+      );
+    }
+
+    const warnings: string[] = [];
+    const clientePromise = this.clientesAdapter
+      .obtenerClientePorId(solicitud.clienteId)
+      .catch(() => {
+        warnings.push(
+          "Advertencia: Algunos datos del cliente o servicio no pudieron ser recuperados desde el servidor central",
+        );
+        return null;
+      });
+
+    const servicioPromise = this.serviciosAdapter
+      .obtenerServicioPorId(solicitud.servicioId)
+      .catch(() => {
+        if (!warnings.length) {
+          warnings.push(
+            "Advertencia: Algunos datos del cliente o servicio no pudieron ser recuperados desde el servidor central",
+          );
+        }
+        return null;
+      });
+
+    const [cliente, servicio, consultores] = await Promise.all([
+      clientePromise,
+      servicioPromise,
+      this.consultoresAdapter.obtenerConsultoresPorSolicitud(solicitudId),
+    ]);
+
+    const total = consultores.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    const start = (page - 1) * pageSize;
+
+    await this.registrarAccesoDetalle(solicitudId, user.sub, ip, true);
+
+    return {
+      id: solicitud.id,
+      servicio: {
+        nombre: this.normalizarTexto(
+          servicio?.nombre ?? solicitud.servicioNombre ?? null,
+        ),
+        tipo: this.normalizarTexto(
+          servicio?.tipo ?? solicitud.servicioTipo ?? null,
+        ),
+      },
+      cliente: this.normalizarTexto(
+        cliente?.nombre ?? solicitud.clienteNombre ?? null,
+      ),
+      gananciaGenerada: this.formatearMoneda(solicitud.gananciaGenerada),
+      fechaInicio: this.formatearFecha(solicitud.fechaInicio),
+      fechaFin: this.formatearFecha(solicitud.fechaFin),
+      consultorApertura: this.normalizarConsultor(solicitud.consultorApertura),
+      consultorCierre: this.normalizarConsultor(solicitud.consultorCierre),
+      consultoresIntervinientes: consultores
+        .slice(start, start + pageSize)
+        .map((consultor) => this.normalizarConsultor(consultor)),
+      metadata: {
+        warnings,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages,
+        },
+      },
+    };
+  }
+
+  async obtenerAtencionesAnidadas(
+    solicitudId: string,
+    user: JwtPayloadData,
+    ip: string,
+    page = 1,
+    pageSize = 25,
+  ): Promise<AtencionesResponseDto> {
+    await this.validarSolicitudParaAtenciones(
+      solicitudId,
+      user,
+      ip,
+      "VIEW_ATENCIONES",
+    );
+
+    const warnings: string[] = [];
+    let falloCargaAtenciones = false;
+    let atenciones: AtencionRaw[] = [];
+
+    try {
+      atenciones =
+        await this.atencionesAdapter.obtenerAtencionesPorSolicitud(solicitudId);
+    } catch {
+      falloCargaAtenciones = true;
+      warnings.push(
+        "Error de conexión temporal: No se pudieron cargar las atenciones asociadas",
+      );
+    }
+
+    if (!falloCargaAtenciones && atenciones.length === 0) {
+      warnings.push("No existen atenciones asociadas a esta solicitud");
+    }
+
+    const total = atenciones.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    const start = (page - 1) * pageSize;
+
+    await this.registrarAccesoAtencion(
+      solicitudId,
+      user.sub,
+      ip,
+      "VIEW_ATENCIONES",
+      true,
+    );
+
+    return {
+      solicitudId,
+      atenciones: atenciones
+        .slice(start, start + pageSize)
+        .map((atencion) => this.normalizarAtencion(atencion)),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+      },
+      warnings,
+    };
+  }
+
+  async exportarAtenciones(
+    solicitudId: string,
+    formato: "pdf" | "excel",
+    user: JwtPayloadData,
+    ip: string,
+  ): Promise<Buffer> {
+    const action =
+      formato === "pdf" ? "EXPORT_ATENCIONES_PDF" : "EXPORT_ATENCIONES_EXCEL";
+
+    await this.validarSolicitudParaAtenciones(solicitudId, user, ip, action);
+
+    let atenciones: AtencionRaw[] = [];
+
+    try {
+      atenciones =
+        await this.atencionesAdapter.obtenerAtencionesPorSolicitud(solicitudId);
+    } catch {
+      throw new InternalServerErrorException(
+        "Error al recuperar las atenciones para exportar",
+      );
+    }
+
+    if (atenciones.length > 500 && formato === "pdf") {
+      throw new BadRequestException(
+        "No se puede exportar mas de 500 registros en PDF. Por favor, utilice el formato Excel para exportar este volumen de datos.",
+      );
+    }
+
+    const atencionesNormalizadas = atenciones.map((atencion) =>
+      this.normalizarAtencion(atencion),
+    );
+
+    try {
+      const buffer =
+        formato === "pdf"
+          ? await withTimeout(generarPDF(atencionesNormalizadas), 5000)
+          : await withTimeout(generarExcel(atencionesNormalizadas), 5000);
+
+      await this.registrarAccesoAtencion(
+        solicitudId,
+        user.sub,
+        ip,
+        action,
+        true,
+      );
+
+      return buffer;
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        "Error al generar el archivo de exportacion",
+      );
+    }
   }
 
   private async generarHistorico(cantidadMeses: number) {
@@ -162,97 +474,151 @@ export class ReportesService {
 
     const horas = solicitudesMes.map((solicitud) => {
       const inicio = new Date(solicitud.fechaCreacion).getTime();
-      const fin = new Date(solicitud.fechaCompletada!).getTime();
+      const fin = new Date(solicitud.fechaCompletada).getTime();
       return (fin - inicio) / (1000 * 60 * 60);
     });
 
     return horas.reduce((acc, value) => acc + value, 0) / horas.length;
   }
 
-  // [Pattern: Cache-Aside]
-  async generarReporte(
-    dto: GenerarReporteDto,
-    usuario: string,
-  ): Promise<ReporteData> {
-    const cacheKey = `reporte:${dto.tipo}:${dto.periodo}`;
+  private async validarSolicitudParaAtenciones(
+    solicitudId: string,
+    user: JwtPayloadData,
+    ip: string,
+    action:
+      | "VIEW_ATENCIONES"
+      | "EXPORT_ATENCIONES_PDF"
+      | "EXPORT_ATENCIONES_EXCEL",
+  ): Promise<void> {
+    const solicitud =
+      await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
 
-    if (this.redisClient && this.redisClient.status === "ready") {
-      try {
-        const cachedData = await this.redisClient.get(cacheKey);
-        if (cachedData) {
-          this.logger.log(`Cache Hit for key: ${cacheKey}`);
-          const parseResult = JSON.parse(cachedData) as ReporteData;
-          await this.firebaseRepository.saveAuditLog({
-            ...parseResult,
-            generadoPor: usuario,
-          });
-          return parseResult;
-        }
-      } catch (cacheError) {
-        const message =
-          cacheError instanceof Error ? cacheError.message : String(cacheError);
-        this.logger.warn(
-          `Failed to read cache: ${message}. Proceeding to source.`,
-        );
-      }
+    if (!solicitud) {
+      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      throw new NotFoundException("No se encontro la solicitud solicitada.");
     }
 
-    this.logger.log(
-      `Cache Miss for key: ${cacheKey}. Generating fresh report...`,
-    );
+    if (solicitud.estado !== "completada") {
+      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      throw new BadRequestException(
+        "Solo se permite consultar solicitudes completadas.",
+      );
+    }
 
-    const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(
-      dto.periodo,
-    );
+    if (!user.unidadIds.includes(solicitud.unidadId)) {
+      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      throw new ForbiddenException(
+        "Permisos insuficientes para visualizar este informe de costos",
+      );
+    }
+  }
 
-    let totalIngresos = 0;
-    let totalEgresos = 0;
+  private normalizarTexto(value: string | null | undefined): string {
+    return value?.trim() ? value : "N/A";
+  }
 
-    rawData.forEach((item) => {
-      const amount = Number(item.monto) || 0;
-      if (item.tipo === "ingreso") {
-        totalIngresos += amount;
-      } else if (item.tipo === "egreso") {
-        totalEgresos += amount;
-      }
-    });
+  private formatearMoneda(value: number | null | undefined): string {
+    const amount = value ?? 0;
+    return `$${amount.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
 
-    const balance = totalIngresos - totalEgresos;
+  private formatearFecha(
+    value: string | null | undefined,
+    includeSeconds = false,
+  ): string {
+    if (!value) {
+      return "N/A";
+    }
 
-    const nuevoReporte: ReporteData = {
-      id: Math.random().toString(36).substring(2, 11),
-      periodo: dto.periodo,
-      tipo: dto.tipo,
-      totalIngresos,
-      totalEgresos,
-      balance,
-      generadoPor: usuario,
-      fechaCreacion: new Date().toISOString(),
-      detalles: rawData,
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "N/A";
+    }
+
+    const pad = (number: number) => String(number).padStart(2, "0");
+    const datePart = [
+      pad(date.getDate()),
+      pad(date.getMonth() + 1),
+      date.getFullYear(),
+    ].join("/");
+    const timePart = [
+      pad(date.getHours()),
+      pad(date.getMinutes()),
+      ...(includeSeconds ? [pad(date.getSeconds())] : []),
+    ].join(":");
+
+    return `${datePart} ${timePart}`;
+  }
+
+  private generarTimestampAuditoria(): string {
+    return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
+  private normalizarConsultor(
+    consultor: ConsultorResumenDto | null,
+  ): ConsultorResumenDto {
+    return {
+      id: consultor?.id ?? "N/A",
+      nombre: this.normalizarTexto(consultor?.nombre ?? null),
     };
+  }
 
-    if (this.redisClient && this.redisClient.status === "ready") {
-      try {
-        await this.redisClient.set(
-          cacheKey,
-          JSON.stringify(nuevoReporte),
-          "EX",
-          3600,
-        );
-        this.logger.log(`Fresh report saved to cache under key: ${cacheKey}`);
-      } catch (cacheWriteError) {
-        const message =
-          cacheWriteError instanceof Error
-            ? cacheWriteError.message
-            : String(cacheWriteError);
-        this.logger.warn(
-          `Failed to save report to cache: ${message}`,
-        );
-      }
-    }
+  private normalizarAtencion(atencion: AtencionRaw): AtencionDto {
+    const descripcion = atencion.descripcion?.trim()
+      ? atencion.descripcion
+      : "N/A";
+    const descripcionTruncada =
+      descripcion.length > 150
+        ? descripcion.substring(0, 150) + "..."
+        : descripcion;
 
-    await this.firebaseRepository.saveAuditLog(nuevoReporte);
+    const fecha = this.formatearFecha(atencion.fechaHora, true);
 
-    return nuevoReporte;
+    return {
+      id: atencion.id,
+      descripcion: descripcionTruncada,
+      lugar: this.normalizarTexto(atencion.lugar),
+      fecha,
+      nombreConsultor: this.normalizarTexto(atencion.nombreConsultor),
+    };
+  }
+
+  private async registrarAccesoDetalle(
+    solicitudId: string,
+    userId: string,
+    ip: string,
+    allowed: boolean,
+  ): Promise<void> {
+    await this.firebaseRepository.saveAccessLog({
+      action: "VIEW_SOLICITUD_DETALLE",
+      solicitudId,
+      userId,
+      timestamp: this.generarTimestampAuditoria(),
+      ip,
+      allowed,
+    });
+  }
+
+  private async registrarAccesoAtencion(
+    solicitudId: string,
+    userId: string,
+    ip: string,
+    action:
+      | "VIEW_ATENCIONES"
+      | "EXPORT_ATENCIONES_PDF"
+      | "EXPORT_ATENCIONES_EXCEL",
+    allowed: boolean,
+  ): Promise<void> {
+    await this.firebaseRepository.saveAccessLog({
+      action,
+      solicitudId,
+      userId,
+      timestamp: this.generarTimestampAuditoria(),
+      ip,
+      allowed,
+    });
   }
 }

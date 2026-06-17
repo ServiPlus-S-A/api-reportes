@@ -1,5 +1,4 @@
 import { Injectable, Logger } from "@nestjs/common";
-import axios from "axios";
 
 @Injectable()
 export class FinanzasAdapter {
@@ -11,10 +10,17 @@ export class FinanzasAdapter {
 
     try {
       if (url) {
-        const response = await axios.get(`${url}?periodo=${periodo}`, {
-          timeout: 3000,
-        });
-        return response.data;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+
+        try {
+          const response = await fetch(`${url}?periodo=${periodo}`, {
+            signal: controller.signal,
+          });
+          return await response.json();
+        } finally {
+          clearTimeout(timeout);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

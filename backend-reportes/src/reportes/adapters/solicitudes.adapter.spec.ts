@@ -1,14 +1,13 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { SolicitudesAdapter } from "./solicitudes.adapter";
-import axios from "axios";
-
-jest.mock("axios");
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe("SolicitudesAdapter", () => {
   let adapter: SolicitudesAdapter;
+  const fetchMock = jest.fn();
 
   beforeEach(async () => {
+    global.fetch = fetchMock;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [SolicitudesAdapter],
     }).compile();
@@ -18,6 +17,7 @@ describe("SolicitudesAdapter", () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    delete process.env.EXTERNAL_SOLICITUDES_URL;
   });
 
   it("should be defined", () => {
@@ -27,20 +27,20 @@ describe("SolicitudesAdapter", () => {
   it("should return data from axios when URL is provided", async () => {
     process.env.EXTERNAL_SOLICITUDES_URL = "http://external-solicitudes.com";
     const mockData = [{ id: "sol-1", estado: "Completada" }];
-    mockedAxios.get.mockResolvedValue({ data: mockData });
+    fetchMock.mockResolvedValue({ json: jest.fn().mockResolvedValue(mockData) });
 
     const result = await adapter.fetchSolicitudesParaPromedio();
 
     expect(result).toBe(mockData);
-    expect(mockedAxios.get).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "http://external-solicitudes.com",
-      { timeout: 3000 },
+      { signal: expect.any(AbortSignal) },
     );
   });
 
   it("should return fallback demo data if axios fails", async () => {
     process.env.EXTERNAL_SOLICITUDES_URL = "http://external-solicitudes.com";
-    mockedAxios.get.mockRejectedValue(new Error("Network Error"));
+    fetchMock.mockRejectedValue(new Error("Network Error"));
 
     const result = await adapter.fetchSolicitudesParaPromedio();
 
@@ -54,6 +54,15 @@ describe("SolicitudesAdapter", () => {
     const result = await adapter.fetchSolicitudesParaPromedio();
 
     expect(result).toHaveLength(6);
-    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a mocked completed solicitud", async () => {
+    const result = await adapter.obtenerSolicitudPorId("REQ-12345");
+    expect(result?.estado).toBe("completada");
+  });
+
+  it("returns null for unknown solicitud", async () => {
+    await expect(adapter.obtenerSolicitudPorId("REQ-00000")).resolves.toBeNull();
   });
 });
