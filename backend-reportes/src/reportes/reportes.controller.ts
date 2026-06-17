@@ -28,10 +28,11 @@ export class ReportesController {
     try {
       return await this.reportesService.generarReporte(dto, usuario);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       throw new BadRequestException({
         statusCode: HttpStatus.BAD_REQUEST,
         message: "No se pudo generar el reporte solicitado.",
-        error: error.message,
+        error: message,
       });
     }
   }

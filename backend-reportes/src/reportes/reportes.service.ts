@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import Redis from "ioredis";
 import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
 import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
 import { GenerarReporteDto } from "./dto/generar-reporte.dto";
 import { TiempoPromedioDto } from "./dto/tiempo-promedio";
@@ -14,6 +15,7 @@ export class ReportesService {
 
   constructor(
     private readonly finanzasAdapter: FinanzasAdapter,
+    private readonly solicitudesAdapter: SolicitudesAdapter,
     private readonly firebaseRepository: FirebaseReporteRepository,
   ) {
     const redisHost = process.env.REDIS_HOST || "localhost";
@@ -41,7 +43,8 @@ export class ReportesService {
         );
       });
     } catch (e) {
-      this.logger.error(`Redis Initialization Error: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Redis Initialization Error: ${message}`);
     }
   }
 
@@ -55,7 +58,8 @@ export class ReportesService {
       ? new Date(dto.fechaFin)
       : new Date("2100-01-01T00:00:00.000Z");
 
-    const solicitudes = await this.finanzasAdapter.fetchSolicitudesParaPromedio();
+    const solicitudes =
+      await this.solicitudesAdapter.fetchSolicitudesParaPromedio();
 
     const solicitudesFiltradas = solicitudes.filter((solicitud) => {
       const fechaCreacion = new Date(solicitud.fechaCreacion);
@@ -98,9 +102,9 @@ export class ReportesService {
       promedioHoras % 24,
     )} hora(s)`;
 
-const historicoUltimos6Meses = await this.generarHistorico(6);
+    const historicoUltimos6Meses = await this.generarHistorico(6);
 
-      return {
+    return {
       promedio: Number(promedioHoras.toFixed(2)),
       unidad: "horas",
       promedioTexto,
@@ -133,7 +137,8 @@ const historicoUltimos6Meses = await this.generarHistorico(6);
     const inicioMes = new Date(fecha.getFullYear(), fecha.getMonth(), 1);
     const finMes = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
 
-    const solicitudes = await this.finanzasAdapter.fetchSolicitudesParaPromedio();
+    const solicitudes =
+      await this.solicitudesAdapter.fetchSolicitudesParaPromedio();
 
     const solicitudesMes = solicitudes.filter((solicitud) => {
       if (solicitud.estado !== "Completada" || !solicitud.fechaCompletada) {
@@ -184,8 +189,10 @@ const historicoUltimos6Meses = await this.generarHistorico(6);
           return parseResult;
         }
       } catch (cacheError) {
+        const message =
+          cacheError instanceof Error ? cacheError.message : String(cacheError);
         this.logger.warn(
-          `Failed to read cache: ${cacheError.message}. Proceeding to source.`,
+          `Failed to read cache: ${message}. Proceeding to source.`,
         );
       }
     }
@@ -234,8 +241,12 @@ const historicoUltimos6Meses = await this.generarHistorico(6);
         );
         this.logger.log(`Fresh report saved to cache under key: ${cacheKey}`);
       } catch (cacheWriteError) {
+        const message =
+          cacheWriteError instanceof Error
+            ? cacheWriteError.message
+            : String(cacheWriteError);
         this.logger.warn(
-          `Failed to save report to cache: ${cacheWriteError.message}`,
+          `Failed to save report to cache: ${message}`,
         );
       }
     }

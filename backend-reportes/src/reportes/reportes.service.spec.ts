@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ReportesService } from "./reportes.service";
 import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
 import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
 import { GenerarReporteDto } from "./dto/generar-reporte.dto";
 
@@ -19,6 +20,7 @@ jest.mock("ioredis", () => {
 describe("ReportesService", () => {
   let service: ReportesService;
   let finanzasAdapter: FinanzasAdapter;
+  let solicitudesAdapter: SolicitudesAdapter;
   let firebaseRepository: FirebaseReporteRepository;
 
   const mockFinanzasData = [
@@ -45,6 +47,37 @@ describe("ReportesService", () => {
     },
   ];
 
+  const mockSolicitudesData = [
+    {
+      id: "sol-001",
+      tipoServicio: "Finanzas",
+      estado: "Completada",
+      fechaCreacion: "2026-01-03T09:00:00.000Z",
+      fechaCompletada: "2026-01-03T18:00:00.000Z",
+    },
+    {
+      id: "sol-002",
+      tipoServicio: "Finanzas",
+      estado: "Completada",
+      fechaCreacion: "2026-01-10T10:00:00.000Z",
+      fechaCompletada: "2026-01-11T10:00:00.000Z",
+    },
+    {
+      id: "sol-003",
+      tipoServicio: "Operaciones",
+      estado: "Completada",
+      fechaCreacion: "2026-02-05T08:30:00.000Z",
+      fechaCompletada: "2026-02-05T17:30:00.000Z",
+    },
+    {
+      id: "sol-004",
+      tipoServicio: "Finanzas",
+      estado: "Cancelada",
+      fechaCreacion: "2026-03-01T07:00:00.000Z",
+      fechaCompletada: null,
+    },
+  ];
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -58,6 +91,12 @@ describe("ReportesService", () => {
           },
         },
         {
+          provide: SolicitudesAdapter,
+          useValue: {
+            fetchSolicitudesParaPromedio: jest.fn(),
+          },
+        },
+        {
           provide: FirebaseReporteRepository,
           useValue: {
             saveAuditLog: jest.fn().mockResolvedValue(undefined),
@@ -68,6 +107,7 @@ describe("ReportesService", () => {
 
     service = module.get<ReportesService>(ReportesService);
     finanzasAdapter = module.get<FinanzasAdapter>(FinanzasAdapter);
+    solicitudesAdapter = module.get<SolicitudesAdapter>(SolicitudesAdapter);
     firebaseRepository = module.get<FirebaseReporteRepository>(
       FirebaseReporteRepository,
     );
@@ -75,6 +115,56 @@ describe("ReportesService", () => {
 
   it("should be defined", () => {
     expect(service).toBeDefined();
+  });
+
+  describe("obtenerTiempoPromedioSolicitudes", () => {
+    it("should calculate promedio and history for matching completed solicitudes", async () => {
+      solicitudesAdapter.fetchSolicitudesParaPromedio = jest
+        .fn()
+        .mockResolvedValue(mockSolicitudesData);
+
+      const result = await service.obtenerTiempoPromedioSolicitudes({
+        fechaInicio: "2026-01-01T00:00:00.000Z",
+        fechaFin: "2026-01-31T23:59:59.000Z",
+        tipoServicio: "Finanzas",
+      } as any);
+
+      expect(result.solicitudesProcesadas).toBe(2);
+      expect(result.promedio).toBeGreaterThan(0);
+      expect(result.historicoUltimos6Meses).toHaveLength(6);
+      expect(result.promedioTexto).toContain("día");
+    });
+
+    it("should return zero response when no solicitudes match the filters", async () => {
+      solicitudesAdapter.fetchSolicitudesParaPromedio = jest
+        .fn()
+        .mockResolvedValue(mockSolicitudesData);
+
+      const result = await service.obtenerTiempoPromedioSolicitudes({
+        fechaInicio: "2026-05-01T00:00:00.000Z",
+        fechaFin: "2026-05-31T23:59:59.000Z",
+        tipoServicio: "Soporte",
+      } as any);
+
+      expect(result.promedio).toBe(0);
+      expect(result.solicitudesProcesadas).toBe(0);
+      expect(result.mensaje).toBe(
+        "Sin datos de cierre para el periodo consultado",
+      );
+    });
+
+    it("should use default date boundaries when they are not provided", async () => {
+      solicitudesAdapter.fetchSolicitudesParaPromedio = jest
+        .fn()
+        .mockResolvedValue(mockSolicitudesData);
+
+      const result = await service.obtenerTiempoPromedioSolicitudes({
+        tipoServicio: "Finanzas",
+      } as any);
+
+      expect(result.solicitudesProcesadas).toBe(2);
+      expect(result.historicoUltimos6Meses.length).toBeGreaterThan(0);
+    });
   });
 
   describe("generarReporte - Cache Miss", () => {
