@@ -1,0 +1,32 @@
+import { Injectable, UnauthorizedException } from "@nestjs/common";
+import * as jwt from "jsonwebtoken";
+import { JwtPayloadData } from "../interfaces/detalle-solicitud.interface";
+
+@Injectable()
+export class JwtReportesService {
+  validateToken(authorization?: string): JwtPayloadData {
+    if (!authorization?.startsWith("Bearer ")) {
+      throw new UnauthorizedException("Token JWT requerido.");
+    }
+
+    const token = authorization.replace("Bearer ", "").trim();
+    const secret = process.env.JWT_SECRET || "dev-serviplus-secret";
+
+    try {
+      const payload = jwt.verify(token, secret) as jwt.JwtPayload;
+      const unidadIds = Array.isArray(payload.unidadIds)
+        ? payload.unidadIds.map((value) => String(value))
+        : payload.unidadId
+          ? [String(payload.unidadId)]
+          : [];
+
+      return {
+        sub: String(payload.sub ?? ""),
+        role: String(payload.role ?? ""),
+        unidadIds,
+      };
+    } catch {
+      throw new UnauthorizedException("Token JWT invalido o expirado.");
+    }
+  }
+}

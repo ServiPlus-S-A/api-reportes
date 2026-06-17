@@ -3,15 +3,12 @@ import { FirebaseReporteRepository } from "./firebase-reporte.repository";
 import * as admin from "firebase-admin";
 
 jest.mock("firebase-admin", () => ({
+  apps: [],
   initializeApp: jest.fn(),
   credential: {
-    applicationDefault: jest.fn(),
+    cert: jest.fn(),
   },
-  firestore: jest.fn().mockReturnValue({
-    collection: jest.fn().mockReturnValue({
-      add: jest.fn().mockResolvedValue({ id: "log-id" }),
-    }),
-  }),
+  firestore: jest.fn(),
 }));
 
 describe("FirebaseReporteRepository", () => {
@@ -20,6 +17,16 @@ describe("FirebaseReporteRepository", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     process.env.FIREBASE_PROJECT_ID = "test-project";
+    process.env.FIREBASE_CLIENT_EMAIL =
+      "firebase-adminsdk-fbsvc@serviplus-reportes.iam.gserviceaccount.com";
+    process.env.FIREBASE_PRIVATE_KEY =
+      "-----BEGIN PRIVATE KEY-----\\nmock-key\\n-----END PRIVATE KEY-----\\n";
+
+    (admin.firestore as unknown as jest.Mock).mockReturnValue({
+      collection: jest.fn().mockReturnValue({
+        add: jest.fn().mockResolvedValue({ id: "log-id" }),
+      }),
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [FirebaseReporteRepository],
@@ -34,41 +41,59 @@ describe("FirebaseReporteRepository", () => {
     expect(repository).toBeDefined();
   });
 
-  describe("saveAuditLog", () => {
-    const mockReporte = {
-      id: "123",
-      periodo: "2026-05",
-      tipo: "finanzas",
-      generadoPor: "test-user",
-    } as any;
+  describe("saveAccessLog", () => {
+    it("should write access log to Firestore if initialized", async () => {
+      const payload = {
+        action: "VIEW_SOLICITUD_DETALLE",
+        solicitudId: "REQ-12345",
+        userId: "coord-1",
+        timestamp: new Date().toISOString(),
+        ip: "127.0.0.1",
+        allowed: true,
+      };
 
-    it("should write to Firestore if initialized", async () => {
-      // Assuming initialization succeeded in constructor due to env var
-      await repository.saveAuditLog(mockReporte);
+      await repository.saveAccessLog(payload);
 
-      const db = admin.firestore();
+      const db = (admin.firestore as unknown as jest.Mock).mock.results[0].value;
       expect(db.collection).toHaveBeenCalledWith("audit_logs");
-      expect(db.collection("audit_logs").add).toHaveBeenCalled();
+      expect(db.collection("audit_logs").add).toHaveBeenCalledWith(payload);
     });
 
     it("should log to console if not initialized", async () => {
-      // Create new instance without env var
       delete process.env.FIREBASE_PROJECT_ID;
+      delete process.env.FIREBASE_CLIENT_EMAIL;
+      delete process.env.FIREBASE_PRIVATE_KEY;
       const repoMock = new FirebaseReporteRepository();
+      const loggerSpy = jest
+        .spyOn((repoMock as any).logger, "log")
+        .mockImplementation(() => undefined);
 
-      await repoMock.saveAuditLog(mockReporte);
-      // It should just log, no firestore calls
-      expect(admin.firestore).toHaveBeenCalledTimes(1); // One from previous test or constructor
+      await repoMock.saveAccessLog({
+        action: "VIEW_SOLICITUD_DETALLE",
+        solicitudId: "REQ-12345",
+        userId: "coord-1",
+        timestamp: new Date().toISOString(),
+        ip: "127.0.0.1",
+        allowed: true,
+      });
+
+      expect(loggerSpy).toHaveBeenCalled();
     });
 
     it("should log error if Firestore write fails", async () => {
-      const db = admin.firestore();
+      const db = (admin.firestore as unknown as jest.Mock).mock.results[0].value;
       (db.collection("audit_logs").add as jest.Mock).mockRejectedValue(
         new Error("Firestore Error"),
       );
 
-      await repository.saveAuditLog(mockReporte);
-      // Should not throw, but log error
+      await repository.saveAccessLog({
+        action: "VIEW_SOLICITUD_DETALLE",
+        solicitudId: "REQ-12345",
+        userId: "coord-1",
+        timestamp: new Date().toISOString(),
+        ip: "127.0.0.1",
+        allowed: true,
+      });
     });
   });
 });

@@ -1,190 +1,256 @@
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
-import { ReportesService } from "./reportes.service";
-import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import { ClientesAdapter } from "./adapters/clientes.adapter";
+import { ConsultoresAdapter } from "./adapters/consultores.adapter";
+import { ServiciosAdapter } from "./adapters/servicios.adapter";
+import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
 import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
-import { GenerarReporteDto } from "./dto/generar-reporte.dto";
-
-// Mock Redis client manually to control ready state and methods
-jest.mock("ioredis", () => {
-  return jest.fn().mockImplementation(() => {
-    return {
-      status: "ready",
-      get: jest.fn(),
-      set: jest.fn(),
-      on: jest.fn(),
-    };
-  });
-});
+import { ReportesService } from "./reportes.service";
 
 describe("ReportesService", () => {
   let service: ReportesService;
-  let finanzasAdapter: FinanzasAdapter;
-  let firebaseRepository: FirebaseReporteRepository;
-
-  const mockFinanzasData = [
-    {
-      id: "1",
-      descripcion: "Ingreso 1",
-      monto: 1000,
-      tipo: "ingreso",
-      fecha: "2026-05-01",
-    },
-    {
-      id: "2",
-      descripcion: "Ingreso 2",
-      monto: 2000,
-      tipo: "ingreso",
-      fecha: "2026-05-02",
-    },
-    {
-      id: "3",
-      descripcion: "Egreso 1",
-      monto: 500,
-      tipo: "egreso",
-      fecha: "2026-05-03",
-    },
-  ];
+  let firebaseRepository: { saveAccessLog: jest.Mock };
+  let solicitudesAdapter: { obtenerSolicitudPorId: jest.Mock };
+  let clientesAdapter: { obtenerClientePorId: jest.Mock };
+  let serviciosAdapter: { obtenerServicioPorId: jest.Mock };
+  let consultoresAdapter: { obtenerConsultoresPorSolicitud: jest.Mock };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReportesService,
         {
-          provide: FinanzasAdapter,
+          provide: FirebaseReporteRepository,
           useValue: {
-            fetchIngresosPorPeriodo: jest
-              .fn()
-              .mockResolvedValue(mockFinanzasData),
+            saveAccessLog: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
-          provide: FirebaseReporteRepository,
+          provide: SolicitudesAdapter,
           useValue: {
-            saveAuditLog: jest.fn().mockResolvedValue(undefined),
+            obtenerSolicitudPorId: jest.fn().mockResolvedValue({
+              id: "REQ-12345",
+              estado: "completada",
+              unidadId: "reportes-centro",
+              servicioId: "srv-001",
+              clienteId: "cli-001",
+              servicioNombre: "Implementacion de mesa de ayuda",
+              servicioTipo: "Consultoria",
+              clienteNombre: "Industrias Nova SAS",
+              gananciaGenerada: 3250000,
+              fechaInicio: "2026-05-04T08:00:00Z",
+              fechaFin: "2026-05-06T17:30:00Z",
+              consultorApertura: {
+                id: "con-001",
+                nombre: "Andrea Salazar",
+              },
+              consultorCierre: {
+                id: "con-004",
+                nombre: "Julian Muñoz",
+              },
+            }),
+          },
+        },
+        {
+          provide: ClientesAdapter,
+          useValue: {
+            obtenerClientePorId: jest
+              .fn()
+              .mockResolvedValue({ nombre: "Industrias Nova SAS" }),
+          },
+        },
+        {
+          provide: ServiciosAdapter,
+          useValue: {
+            obtenerServicioPorId: jest.fn().mockResolvedValue({
+              nombre: "Implementacion de mesa de ayuda",
+              tipo: "Consultoria",
+            }),
+          },
+        },
+        {
+          provide: ConsultoresAdapter,
+          useValue: {
+            obtenerConsultoresPorSolicitud: jest.fn().mockResolvedValue(
+              Array.from({ length: 12 }, (_, index) => ({
+                id: `con-${index + 1}`,
+                nombre: `Consultor ${index + 1}`,
+              })),
+            ),
           },
         },
       ],
     }).compile();
 
     service = module.get<ReportesService>(ReportesService);
-    finanzasAdapter = module.get<FinanzasAdapter>(FinanzasAdapter);
-    firebaseRepository = module.get<FirebaseReporteRepository>(
-      FirebaseReporteRepository,
-    );
+    firebaseRepository = module.get(FirebaseReporteRepository);
+    solicitudesAdapter = module.get(SolicitudesAdapter);
+    clientesAdapter = module.get(ClientesAdapter);
+    serviciosAdapter = module.get(ServiciosAdapter);
+    consultoresAdapter = module.get(ConsultoresAdapter);
   });
 
   it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe("generarReporte - Cache Miss", () => {
-    it("should fetch fresh data, perform correct calculations, write to cache, and save audit logs", async () => {
-      // Force Redis get to return null (cache miss)
-      const mockRedisInstance = (service as any).redisClient;
-      mockRedisInstance.get = jest.fn().mockResolvedValue(null);
-      mockRedisInstance.set = jest.fn().mockResolvedValue("OK");
+  it("returns paginated detalle and logs allowed access", async () => {
+    const result = await service.obtenerDetalleSolicitudCompletada(
+      "REQ-12345",
+      {
+        sub: "coord-1",
+        role: "coordinador",
+        unidadIds: ["reportes-centro"],
+      },
+      "127.0.0.1",
+      2,
+      10,
+    );
 
-      const dto: GenerarReporteDto = {
-        periodo: "2026-05",
-        tipo: "finanzas",
-      };
+    expect(result.id).toBe("REQ-12345");
+    expect(result.consultoresIntervinientes).toHaveLength(2);
+    expect(result.metadata.pagination.total).toBe(12);
+    expect(result.metadata.pagination.totalPages).toBe(2);
+    expect(firebaseRepository.saveAccessLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        solicitudId: "REQ-12345",
+        userId: "coord-1",
+        ip: "127.0.0.1",
+        allowed: true,
+      }),
+    );
+    expect(consultoresAdapter.obtenerConsultoresPorSolicitud).toHaveBeenCalled();
+  });
 
-      const result = await service.generarReporte(dto, "test_user");
+  it("returns partial data with warnings when enrichments fail", async () => {
+    clientesAdapter.obtenerClientePorId.mockRejectedValueOnce(
+      new Error("CLIENT_SERVICE_UNAVAILABLE"),
+    );
+    serviciosAdapter.obtenerServicioPorId.mockRejectedValueOnce(
+      new Error("SERVICE_CATALOG_UNAVAILABLE"),
+    );
 
-      // Assert calculations
-      expect(result.totalIngresos).toBe(3000);
-      expect(result.totalEgresos).toBe(500);
-      expect(result.balance).toBe(2500);
-      expect(result.generadoPor).toBe("test_user");
+    const result = await service.obtenerDetalleSolicitudCompletada(
+      "REQ-12345",
+      {
+        sub: "coord-1",
+        role: "coordinador",
+        unidadIds: ["reportes-centro"],
+      },
+      "127.0.0.1",
+    );
 
-      // Assert dependencies were invoked
-      expect(finanzasAdapter.fetchIngresosPorPeriodo).toHaveBeenCalledWith(
-        "2026-05",
-      );
-      expect(mockRedisInstance.set).toHaveBeenCalled();
-      expect(firebaseRepository.saveAuditLog).toHaveBeenCalled();
+    expect(result.metadata.warnings).toContain(
+      "Advertencia: Algunos datos del cliente o servicio no pudieron ser recuperados desde el servidor central",
+    );
+    expect(result.cliente).toBe("Industrias Nova SAS");
+    expect(result.servicio.nombre).toBe("Implementacion de mesa de ayuda");
+  });
+
+  it("throws forbidden when unidad is not allowed", async () => {
+    await expect(
+      service.obtenerDetalleSolicitudCompletada(
+        "REQ-12345",
+        {
+          sub: "coord-2",
+          role: "coordinador",
+          unidadIds: ["reportes-sur"],
+        },
+        "127.0.0.1",
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(firebaseRepository.saveAccessLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowed: false,
+        solicitudId: "REQ-12345",
+        userId: "coord-2",
+      }),
+    );
+  });
+
+  it("throws bad request when solicitud is not completed", async () => {
+    solicitudesAdapter.obtenerSolicitudPorId.mockResolvedValueOnce({
+      id: "REQ-55555",
+      estado: "pendiente",
+      unidadId: "reportes-centro",
+      servicioId: "srv-001",
+      clienteId: "cli-001",
+      servicioNombre: "Servicio temporal",
+      servicioTipo: "Consultoria",
+      clienteNombre: "Cliente temporal",
+      gananciaGenerada: 1000,
+      fechaInicio: "2026-05-04T08:00:00Z",
+      fechaFin: null,
+      consultorApertura: null,
+      consultorCierre: null,
+    });
+
+    await expect(
+      service.obtenerDetalleSolicitudCompletada(
+        "REQ-55555",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: "Solo se permite consultar solicitudes completadas.",
+      }),
     });
   });
 
-  describe("generarReporte - Cache Hit", () => {
-    it("should return cached data directly and write audit logs", async () => {
-      const cachedReport = {
-        id: "cached123",
-        periodo: "2026-05",
-        tipo: "finanzas",
-        totalIngresos: 5000,
-        totalEgresos: 1000,
-        balance: 4000,
-        generadoPor: "old_user",
-        fechaCreacion: new Date().toISOString(),
-        detalles: [],
-      };
-
-      // Force Redis get to return cached object
-      const mockRedisInstance = (service as any).redisClient;
-      mockRedisInstance.get = jest
-        .fn()
-        .mockResolvedValue(JSON.stringify(cachedReport));
-
-      const dto: GenerarReporteDto = {
-        periodo: "2026-05",
-        tipo: "finanzas",
-      };
-
-      const result = await service.generarReporte(dto, "new_user");
-
-      // Assert returned report matches the cached data
-      expect(result.id).toBe("cached123");
-      expect(result.balance).toBe(4000);
-
-      // Verify adapter is bypassed
-      expect(finanzasAdapter.fetchIngresosPorPeriodo).not.toHaveBeenCalled();
-      expect(firebaseRepository.saveAuditLog).toHaveBeenCalled();
+  it("normalizes null consultores and empty dates", async () => {
+    solicitudesAdapter.obtenerSolicitudPorId.mockResolvedValueOnce({
+      id: "REQ-54321",
+      estado: "completada",
+      unidadId: "reportes-centro",
+      servicioId: "srv-missing",
+      clienteId: "cli-missing",
+      servicioNombre: null,
+      servicioTipo: null,
+      clienteNombre: null,
+      gananciaGenerada: null,
+      fechaInicio: null,
+      fechaFin: null,
+      consultorApertura: null,
+      consultorCierre: null,
     });
+    consultoresAdapter.obtenerConsultoresPorSolicitud.mockResolvedValueOnce([]);
+    clientesAdapter.obtenerClientePorId.mockRejectedValueOnce(new Error("x"));
+    serviciosAdapter.obtenerServicioPorId.mockRejectedValueOnce(new Error("x"));
+
+    const result = await service.obtenerDetalleSolicitudCompletada(
+      "REQ-54321",
+      {
+        sub: "coord-1",
+        role: "coordinador",
+        unidadIds: ["reportes-centro"],
+      },
+      "127.0.0.1",
+    );
+
+    expect(result.fechaInicio).toBe("N/A");
+    expect(result.consultorApertura).toEqual({ id: "N/A", nombre: "N/A" });
+    expect(result.gananciaGenerada).toBe(0);
   });
 
-  describe("generarReporte - Redis Errors", () => {
-    it("should proceed to source if Redis read fails", async () => {
-      const mockRedisInstance = (service as any).redisClient;
-      mockRedisInstance.get = jest
-        .fn()
-        .mockRejectedValue(new Error("Redis Read Error"));
+  it("throws not found when solicitud does not exist", async () => {
+    solicitudesAdapter.obtenerSolicitudPorId.mockResolvedValueOnce(null);
 
-      const dto: GenerarReporteDto = {
-        periodo: "2026-05",
-        tipo: "finanzas",
-      };
-
-      const result = await service.generarReporte(dto, "test_user");
-      expect(result).toBeDefined();
-      expect(finanzasAdapter.fetchIngresosPorPeriodo).toHaveBeenCalled();
-    });
-
-    it("should log warning if Redis write fails but return result", async () => {
-      const mockRedisInstance = (service as any).redisClient;
-      mockRedisInstance.get = jest.fn().mockResolvedValue(null);
-      mockRedisInstance.set = jest
-        .fn()
-        .mockRejectedValue(new Error("Redis Write Error"));
-
-      const dto: GenerarReporteDto = {
-        periodo: "2026-05",
-        tipo: "finanzas",
-      };
-
-      const result = await service.generarReporte(dto, "test_user");
-      expect(result).toBeDefined();
-      expect(mockRedisInstance.set).toHaveBeenCalled();
-    });
-  });
-
-  describe("Redis Retry Strategy", () => {
-    it("should return null if retries exceed 2", () => {
-      /* const redisOptions = (service as any).redisClient.options;
-      const retryStrategy = (service as any).redisClient.options.retryStrategy; */
-      // We can't easily access the actual instance strategy if it's mocked,
-      // but we can test the logic if we extract it or test the implementation.
-      // Since ioredis is mocked, this is more for documentation or if we had real instance.
-    });
+    await expect(
+      service.obtenerDetalleSolicitudCompletada(
+        "REQ-00000",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
