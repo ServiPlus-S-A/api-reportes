@@ -2,38 +2,217 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  NotFoundException,
   InternalServerErrorException,
+  Logger,
+  NotFoundException,
 } from "@nestjs/common";
-import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
-import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
-import { ClientesAdapter } from "./adapters/clientes.adapter";
-import { ServiciosAdapter } from "./adapters/servicios.adapter";
-import { ConsultoresAdapter } from "./adapters/consultores.adapter";
 import { AtencionesAdapter } from "./adapters/atenciones.adapter";
-import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
+import { ClientesAdapter } from "./adapters/clientes.adapter";
+import { ConsultoresAdapter } from "./adapters/consultores.adapter";
+import { FinanzasAdapter } from "./adapters/finanzas.adapter";
+import { ServiciosAdapter } from "./adapters/servicios.adapter";
+import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
 import { AtencionRaw } from "./interfaces/atenciones.interface";
+import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
+import { PromedioData } from "./interfaces/promedioInterface";
+import { ReporteData } from "./interfaces/reporte.interface";
+import { AtencionDto, AtencionesResponseDto } from "./dto/atencion-response.dto";
 import {
   ConsultorResumenDto,
   DetalleSolicitudResponseDto,
 } from "./dto/detalle-solicitud-response.dto";
-import {
-  AtencionesResponseDto,
-  AtencionDto,
-} from "./dto/atencion-response.dto";
+import { GenerarReporteDto } from "./dto/generar-reporte.dto";
+import { TiempoPromedioDto } from "./dto/tiempo-promedio";
+import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
+import { generarExcel, generarPDF } from "./utils/export.util";
 import { withTimeout } from "./utils/timeout.util";
-import { generarPDF, generarExcel } from "./utils/export.util";
 
 @Injectable()
 export class ReportesService {
+  private readonly logger = new Logger(ReportesService.name);
+  private redisClient: any = null;
+
   constructor(
+    private readonly finanzasAdapter: FinanzasAdapter,
     private readonly firebaseRepository: FirebaseReporteRepository,
     private readonly solicitudesAdapter: SolicitudesAdapter,
     private readonly clientesAdapter: ClientesAdapter,
     private readonly serviciosAdapter: ServiciosAdapter,
     private readonly consultoresAdapter: ConsultoresAdapter,
     private readonly atencionesAdapter: AtencionesAdapter,
-  ) {}
+  ) {
+    const redisHost = process.env.REDIS_HOST || "localhost";
+    const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10);
+
+    try {
+      const RedisClient = require("ioredis");
+      this.redisClient = new RedisClient({
+        host: redisHost,
+        port: redisPort,
+        maxRetriesPerRequest: 1,
+        retryStrategy: (times) => {
+          if (times > 2) {
+            this.logger.warn(
+              "Redis connection failed too many times. Running without caching.",
+            );
+            return null;
+          }
+          return 500;
+        },
+      });
+
+      this.redisClient.on("error", (err) => {
+        this.logger.warn(
+          `Redis Cache Connection Error: ${err.message}. Bypassing Redis cache.`,
+        );
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("Cannot find module 'ioredis'")) {
+        this.logger.error(`Redis Initialization Error: ${message}`);
+      }
+    }
+  }
+
+  async obtenerTiempoPromedioSolicitudes(
+    dto: TiempoPromedioDto,
+  ): Promise<PromedioData> {
+    const fechaInicio = dto.fechaInicio
+      ? new Date(dto.fechaInicio)
+      : new Date("2000-01-01T00:00:00.000Z");
+    const fechaFin = dto.fechaFin
+      ? new Date(dto.fechaFin)
+      : new Date("2100-01-01T00:00:00.000Z");
+
+    const solicitudes =
+      await this.solicitudesAdapter.fetchSolicitudesParaPromedio();
+
+    const solicitudesFiltradas = solicitudes.filter((solicitud) => {
+      const fechaCreacion = new Date(solicitud.fechaCreacion);
+      const coincideTipo =
+        !dto.tipoServicio ||
+        solicitud.tipoServicio.toLowerCase() ===
+          dto.tipoServicio.toLowerCase();
+      const coincideRango =
+        fechaCreacion >= fechaInicio && fechaCreacion <= fechaFin;
+      const esCompletada =
+        solicitud.estado === "Completada" &&
+        solicitud.fechaCompletada !== null;
+
+      return coincideTipo && coincideRango && esCompletada;
+    });
+
+    if (solicitudesFiltradas.length === 0) {
+      return {
+        promedio: 0,
+        unidad: "horas",
+        promedioTexto: "0.0",
+        solicitudesProcesadas: 0,
+        mensaje: "Sin datos de cierre para el periodo consultado",
+        historicoUltimos6Meses: [],
+      };
+    }
+
+    const duracionesHoras = solicitudesFiltradas.map((solicitud) => {
+      const inicio = new Date(solicitud.fechaCreacion).getTime();
+      const fin = new Date(solicitud.fechaCompletada).getTime();
+      return (fin - inicio) / (1000 * 60 * 60);
+    });
+
+    const promedioHoras =
+      duracionesHoras.reduce((acc, value) => acc + value, 0) /
+      duracionesHoras.length;
+    const promedioDias = promedioHoras / 24;
+    const dias = Math.floor(promedioDias);
+    const horas = Math.round(promedioHoras % 24);
+    const promedioTexto = `${dias} ${dias === 1 ? "día" : "días"}, ${horas} ${
+      horas === 1 ? "hora" : "horas"
+    }`;
+
+    return {
+      promedio: Number(promedioHoras.toFixed(2)),
+      unidad: "horas",
+      promedioTexto,
+      solicitudesProcesadas: solicitudesFiltradas.length,
+      historicoUltimos6Meses: await this.generarHistorico(6),
+    };
+  }
+
+  async generarReporte(
+    dto: GenerarReporteDto,
+    usuario: string,
+  ): Promise<ReporteData> {
+    const cacheKey = `reporte:${dto.tipo}:${dto.periodo}`;
+
+    if (this.redisClient && this.redisClient.status === "ready") {
+      try {
+        const cachedData = await this.redisClient.get(cacheKey);
+        if (cachedData) {
+          this.logger.log(`Cache Hit for key: ${cacheKey}`);
+          const parseResult = JSON.parse(cachedData) as ReporteData;
+          await this.firebaseRepository.saveAuditLog({
+            ...parseResult,
+            generadoPor: usuario,
+          });
+          return parseResult;
+        }
+      } catch (cacheError) {
+        const message =
+          cacheError instanceof Error ? cacheError.message : String(cacheError);
+        this.logger.warn(
+          `Failed to read cache: ${message}. Proceeding to source.`,
+        );
+      }
+    }
+
+    const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(
+      dto.periodo,
+    );
+
+    let totalIngresos = 0;
+    let totalEgresos = 0;
+
+    rawData.forEach((item) => {
+      const amount = Number(item.monto) || 0;
+      if (item.tipo === "ingreso") {
+        totalIngresos += amount;
+      } else if (item.tipo === "egreso") {
+        totalEgresos += amount;
+      }
+    });
+
+    const nuevoReporte: ReporteData = {
+      id: Math.random().toString(36).substring(2, 11),
+      periodo: dto.periodo,
+      tipo: dto.tipo,
+      totalIngresos,
+      totalEgresos,
+      balance: totalIngresos - totalEgresos,
+      generadoPor: usuario,
+      fechaCreacion: new Date().toISOString(),
+      detalles: rawData,
+    };
+
+    if (this.redisClient && this.redisClient.status === "ready") {
+      try {
+        await this.redisClient.set(
+          cacheKey,
+          JSON.stringify(nuevoReporte),
+          "EX",
+          3600,
+        );
+      } catch (cacheWriteError) {
+        const message =
+          cacheWriteError instanceof Error
+            ? cacheWriteError.message
+            : String(cacheWriteError);
+        this.logger.warn(`Failed to save report to cache: ${message}`);
+      }
+    }
+
+    await this.firebaseRepository.saveAuditLog(nuevoReporte);
+    return nuevoReporte;
+  }
 
   async obtenerDetalleSolicitudCompletada(
     solicitudId: string,
@@ -65,7 +244,6 @@ export class ReportesService {
     }
 
     const warnings: string[] = [];
-
     const clientePromise = this.clientesAdapter
       .obtenerClientePorId(solicitud.clienteId)
       .catch(() => {
@@ -95,7 +273,6 @@ export class ReportesService {
     const total = consultores.length;
     const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
     const start = (page - 1) * pageSize;
-    const consultoresPaginados = consultores.slice(start, start + pageSize);
 
     await this.registrarAccesoDetalle(solicitudId, user.sub, ip, true);
 
@@ -112,14 +289,14 @@ export class ReportesService {
       cliente: this.normalizarTexto(
         cliente?.nombre ?? solicitud.clienteNombre ?? null,
       ),
-      gananciaGenerada: solicitud.gananciaGenerada ?? 0,
-      fechaInicio: this.normalizarTexto(solicitud.fechaInicio),
-      fechaFin: this.normalizarTexto(solicitud.fechaFin),
+      gananciaGenerada: this.formatearMoneda(solicitud.gananciaGenerada),
+      fechaInicio: this.formatearFecha(solicitud.fechaInicio),
+      fechaFin: this.formatearFecha(solicitud.fechaFin),
       consultorApertura: this.normalizarConsultor(solicitud.consultorApertura),
       consultorCierre: this.normalizarConsultor(solicitud.consultorCierre),
-      consultoresIntervinientes: consultoresPaginados.map((consultor) =>
-        this.normalizarConsultor(consultor),
-      ),
+      consultoresIntervinientes: consultores
+        .slice(start, start + pageSize)
+        .map((consultor) => this.normalizarConsultor(consultor)),
       metadata: {
         warnings,
         pagination: {
@@ -139,68 +316,34 @@ export class ReportesService {
     page = 1,
     pageSize = 25,
   ): Promise<AtencionesResponseDto> {
-    const solicitud =
-      await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
-
-    if (!solicitud) {
-      await this.registrarAccesoAtencion(
-        solicitudId,
-        user.sub,
-        ip,
-        "VIEW_ATENCIONES",
-        false,
-      );
-      throw new NotFoundException("No se encontro la solicitud solicitada.");
-    }
-
-    if (solicitud.estado !== "completada") {
-      await this.registrarAccesoAtencion(
-        solicitudId,
-        user.sub,
-        ip,
-        "VIEW_ATENCIONES",
-        false,
-      );
-      throw new BadRequestException(
-        "Solo se permite consultar solicitudes completadas.",
-      );
-    }
-
-    if (!user.unidadIds.includes(solicitud.unidadId)) {
-      await this.registrarAccesoAtencion(
-        solicitudId,
-        user.sub,
-        ip,
-        "VIEW_ATENCIONES",
-        false,
-      );
-      throw new ForbiddenException(
-        "Permisos insuficientes para visualizar este informe de costos",
-      );
-    }
+    await this.validarSolicitudParaAtenciones(
+      solicitudId,
+      user,
+      ip,
+      "VIEW_ATENCIONES",
+    );
 
     const warnings: string[] = [];
+    let falloCargaAtenciones = false;
     let atenciones: AtencionRaw[] = [];
 
     try {
       atenciones =
         await this.atencionesAdapter.obtenerAtencionesPorSolicitud(solicitudId);
-    } catch (error) {
+    } catch {
+      falloCargaAtenciones = true;
       warnings.push(
-        "Advertencia: No se pudieron cargar las atenciones asociadas",
+        "Error de conexión temporal: No se pudieron cargar las atenciones asociadas",
       );
     }
 
-    if (atenciones.length === 0) {
-      warnings.push(
-        "No se encontraron registros de atención para esta solicitud",
-      );
+    if (!falloCargaAtenciones && atenciones.length === 0) {
+      warnings.push("No existen atenciones asociadas a esta solicitud");
     }
 
     const total = atenciones.length;
     const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
     const start = (page - 1) * pageSize;
-    const atencionesPaginadas = atenciones.slice(start, start + pageSize);
 
     await this.registrarAccesoAtencion(
       solicitudId,
@@ -212,9 +355,9 @@ export class ReportesService {
 
     return {
       solicitudId,
-      atenciones: atencionesPaginadas.map((atencion) =>
-        this.normalizarAtencion(atencion),
-      ),
+      atenciones: atenciones
+        .slice(start, start + pageSize)
+        .map((atencion) => this.normalizarAtencion(atencion)),
       pagination: {
         page,
         pageSize,
@@ -231,52 +374,17 @@ export class ReportesService {
     user: JwtPayloadData,
     ip: string,
   ): Promise<Buffer> {
-    const solicitud =
-      await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
+    const action =
+      formato === "pdf" ? "EXPORT_ATENCIONES_PDF" : "EXPORT_ATENCIONES_EXCEL";
 
-    if (!solicitud) {
-      await this.registrarAccesoAtencion(
-        solicitudId,
-        user.sub,
-        ip,
-        formato === "pdf" ? "EXPORT_ATENCIONES_PDF" : "EXPORT_ATENCIONES_EXCEL",
-        false,
-      );
-      throw new NotFoundException("No se encontro la solicitud solicitada.");
-    }
-
-    if (solicitud.estado !== "completada") {
-      await this.registrarAccesoAtencion(
-        solicitudId,
-        user.sub,
-        ip,
-        formato === "pdf" ? "EXPORT_ATENCIONES_PDF" : "EXPORT_ATENCIONES_EXCEL",
-        false,
-      );
-      throw new BadRequestException(
-        "Solo se permite consultar solicitudes completadas.",
-      );
-    }
-
-    if (!user.unidadIds.includes(solicitud.unidadId)) {
-      await this.registrarAccesoAtencion(
-        solicitudId,
-        user.sub,
-        ip,
-        formato === "pdf" ? "EXPORT_ATENCIONES_PDF" : "EXPORT_ATENCIONES_EXCEL",
-        false,
-      );
-      throw new ForbiddenException(
-        "Permisos insuficientes para visualizar este informe de costos",
-      );
-    }
+    await this.validarSolicitudParaAtenciones(solicitudId, user, ip, action);
 
     let atenciones: AtencionRaw[] = [];
 
     try {
       atenciones =
         await this.atencionesAdapter.obtenerAtencionesPorSolicitud(solicitudId);
-    } catch (error) {
+    } catch {
       throw new InternalServerErrorException(
         "Error al recuperar las atenciones para exportar",
       );
@@ -284,28 +392,25 @@ export class ReportesService {
 
     if (atenciones.length > 500 && formato === "pdf") {
       throw new BadRequestException(
-        "No se puede exportar más de 500 registros en PDF. Por favor, utilice el formato Excel para exportar este volumen de datos.",
+        "No se puede exportar mas de 500 registros en PDF. Por favor, utilice el formato Excel para exportar este volumen de datos.",
       );
     }
 
-    const atencioneNormalizadas = atenciones.map((atencion) =>
+    const atencionesNormalizadas = atenciones.map((atencion) =>
       this.normalizarAtencion(atencion),
     );
 
     try {
-      let buffer: Buffer;
-
-      if (formato === "pdf") {
-        buffer = await withTimeout(generarPDF(atencioneNormalizadas), 5000);
-      } else {
-        buffer = await withTimeout(generarExcel(atencioneNormalizadas), 5000);
-      }
+      const buffer =
+        formato === "pdf"
+          ? await withTimeout(generarPDF(atencionesNormalizadas), 5000)
+          : await withTimeout(generarExcel(atencionesNormalizadas), 5000);
 
       await this.registrarAccesoAtencion(
         solicitudId,
         user.sub,
         ip,
-        formato === "pdf" ? "EXPORT_ATENCIONES_PDF" : "EXPORT_ATENCIONES_EXCEL",
+        action,
         true,
       );
 
@@ -315,13 +420,141 @@ export class ReportesService {
         throw error;
       }
       throw new InternalServerErrorException(
-        "Error al generar el archivo de exportación",
+        "Error al generar el archivo de exportacion",
       );
     }
   }
 
-  private normalizarTexto(value: string | null): string {
+  private async generarHistorico(cantidadMeses: number) {
+    const resultado = [];
+    const ahora = new Date();
+
+    for (let i = cantidadMeses - 1; i >= 0; i--) {
+      const fecha = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1);
+      const mes = fecha.toLocaleString("es-ES", {
+        month: "short",
+        year: "numeric",
+      });
+      const promedioMes = await this.calcularPromedioMes(fecha);
+      resultado.push({
+        mes,
+        promedioHoras: Number(promedioMes.toFixed(2)),
+      });
+    }
+
+    return resultado;
+  }
+
+  private async calcularPromedioMes(fecha: Date) {
+    const inicioMes = new Date(fecha.getFullYear(), fecha.getMonth(), 1);
+    const finMes = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
+
+    const solicitudes =
+      await this.solicitudesAdapter.fetchSolicitudesParaPromedio();
+
+    const solicitudesMes = solicitudes.filter((solicitud) => {
+      if (solicitud.estado !== "Completada" || !solicitud.fechaCompletada) {
+        return false;
+      }
+
+      const fechaCreacion = new Date(solicitud.fechaCreacion);
+      const fechaCompletada = new Date(solicitud.fechaCompletada);
+
+      return (
+        fechaCreacion >= inicioMes &&
+        fechaCreacion <= finMes &&
+        fechaCompletada >= inicioMes &&
+        fechaCompletada <= finMes
+      );
+    });
+
+    if (solicitudesMes.length === 0) {
+      return 0;
+    }
+
+    const horas = solicitudesMes.map((solicitud) => {
+      const inicio = new Date(solicitud.fechaCreacion).getTime();
+      const fin = new Date(solicitud.fechaCompletada).getTime();
+      return (fin - inicio) / (1000 * 60 * 60);
+    });
+
+    return horas.reduce((acc, value) => acc + value, 0) / horas.length;
+  }
+
+  private async validarSolicitudParaAtenciones(
+    solicitudId: string,
+    user: JwtPayloadData,
+    ip: string,
+    action:
+      | "VIEW_ATENCIONES"
+      | "EXPORT_ATENCIONES_PDF"
+      | "EXPORT_ATENCIONES_EXCEL",
+  ): Promise<void> {
+    const solicitud =
+      await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
+
+    if (!solicitud) {
+      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      throw new NotFoundException("No se encontro la solicitud solicitada.");
+    }
+
+    if (solicitud.estado !== "completada") {
+      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      throw new BadRequestException(
+        "Solo se permite consultar solicitudes completadas.",
+      );
+    }
+
+    if (!user.unidadIds.includes(solicitud.unidadId)) {
+      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      throw new ForbiddenException(
+        "Permisos insuficientes para visualizar este informe de costos",
+      );
+    }
+  }
+
+  private normalizarTexto(value: string | null | undefined): string {
     return value?.trim() ? value : "N/A";
+  }
+
+  private formatearMoneda(value: number | null | undefined): string {
+    const amount = value ?? 0;
+    return `$${amount.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  private formatearFecha(
+    value: string | null | undefined,
+    includeSeconds = false,
+  ): string {
+    if (!value) {
+      return "N/A";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "N/A";
+    }
+
+    const pad = (number: number) => String(number).padStart(2, "0");
+    const datePart = [
+      pad(date.getDate()),
+      pad(date.getMonth() + 1),
+      date.getFullYear(),
+    ].join("/");
+    const timePart = [
+      pad(date.getHours()),
+      pad(date.getMinutes()),
+      ...(includeSeconds ? [pad(date.getSeconds())] : []),
+    ].join(":");
+
+    return `${datePart} ${timePart}`;
+  }
+
+  private generarTimestampAuditoria(): string {
+    return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   }
 
   private normalizarConsultor(
@@ -342,19 +575,7 @@ export class ReportesService {
         ? descripcion.substring(0, 150) + "..."
         : descripcion;
 
-    const fecha = atencion.fechaHora
-      ? new Date(atencion.fechaHora).toLocaleDateString("es-ES", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }) +
-        " " +
-        new Date(atencion.fechaHora).toLocaleTimeString("es-ES", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      : "N/A";
+    const fecha = this.formatearFecha(atencion.fechaHora, true);
 
     return {
       id: atencion.id,
@@ -375,7 +596,7 @@ export class ReportesService {
       action: "VIEW_SOLICITUD_DETALLE",
       solicitudId,
       userId,
-      timestamp: new Date().toISOString(),
+      timestamp: this.generarTimestampAuditoria(),
       ip,
       allowed,
     });
@@ -395,7 +616,7 @@ export class ReportesService {
       action,
       solicitudId,
       userId,
-      timestamp: new Date().toISOString(),
+      timestamp: this.generarTimestampAuditoria(),
       ip,
       allowed,
     });

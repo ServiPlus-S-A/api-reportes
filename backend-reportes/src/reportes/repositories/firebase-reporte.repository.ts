@@ -10,6 +10,18 @@ interface AccessAuditPayload {
   allowed: boolean;
 }
 
+interface ReportAuditPayload {
+  id?: string;
+  periodo: string;
+  tipo: string;
+  totalIngresos: number;
+  totalEgresos: number;
+  balance: number;
+  generadoPor: string;
+  fechaCreacion: string;
+  detalles: any[];
+}
+
 @Injectable()
 export class FirebaseReporteRepository {
   private readonly logger = new Logger(FirebaseReporteRepository.name);
@@ -67,5 +79,23 @@ export class FirebaseReporteRepository {
     }
 
     this.logger.log(`[AUDIT ACCESS MOCK] ${JSON.stringify(payload)}`);
+  }
+
+  async saveAuditLog(payload: ReportAuditPayload): Promise<void> {
+    if (this.isInitialized && this.db) {
+      try {
+        await this.db.collection("reporte_audit_logs").add(payload);
+        this.logger.log(
+          "Report audit log successfully persisted to Firebase Firestore.",
+        );
+      } catch (error) {
+        this.logger.error(
+          `Error saving report audit log to Firebase: ${error.message}`,
+        );
+      }
+      return;
+    }
+
+    this.logger.log(`[AUDIT REPORT MOCK] ${JSON.stringify(payload)}`);
   }
 }

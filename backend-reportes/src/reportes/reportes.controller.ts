@@ -1,35 +1,98 @@
-import { Get, Param, Query, Req, Controller, Res } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { Request, Response } from "express";
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiForbiddenResponse,
+  ApiInternalServerErrorResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
-  ApiForbiddenResponse,
-  ApiNotFoundResponse,
-  ApiInternalServerErrorResponse,
 } from "@nestjs/swagger";
-import { ReportesService } from "./reportes.service";
-import { JwtReportesService } from "./auth/jwt-reportes.service";
-import { DetalleSolicitudQueryDto } from "./dto/detalle-solicitud-query.dto";
-import { DetalleSolicitudResponseDto } from "./dto/detalle-solicitud-response.dto";
+import { CurrentUser } from "./auth/current-user.decorator";
+import { JwtAuthGuard } from "./auth/jwt-auth.guard";
+import { Roles } from "./auth/roles.decorator";
+import { RolesGuard } from "./auth/roles.guard";
 import { AtencionQueryDto } from "./dto/atencion-query.dto";
 import { AtencionesResponseDto } from "./dto/atencion-response.dto";
+import { DetalleSolicitudQueryDto } from "./dto/detalle-solicitud-query.dto";
+import { DetalleSolicitudResponseDto } from "./dto/detalle-solicitud-response.dto";
 import { ExportQueryDto } from "./dto/export-query.dto";
+import { GenerarReporteDto } from "./dto/generar-reporte.dto";
+import { TiempoPromedioDto } from "./dto/tiempo-promedio";
+import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
+import { PromedioData } from "./interfaces/promedioInterface";
+import { ReporteData } from "./interfaces/reporte.interface";
+import { ReportesService } from "./reportes.service";
 
 @ApiTags("Reportes")
 @Controller("reportes")
 export class ReportesController {
   constructor(
     private readonly reportesService: ReportesService,
-    private readonly jwtReportesService: JwtReportesService,
   ) {}
 
+  @Post("generar")
+  @HttpCode(HttpStatus.OK)
+  async generarReporte(
+    @Body() dto: GenerarReporteDto,
+    @Headers("x-user-id") userId: string,
+  ): Promise<ReporteData> {
+    const usuario = userId || "anonymous_system_user";
+
+    try {
+      return await this.reportesService.generarReporte(dto, usuario);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "No se pudo generar el reporte solicitado.",
+        error: message,
+      });
+    }
+  }
+
+  @Post("tiempo-promedio-solicitudes")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Consultar tiempo promedio de cierre de solicitudes completadas",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este informe de costos",
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador", "direccion_administrativa")
+  async obtenerTiempoPromedioSolicitudes(
+    @Body() dto: TiempoPromedioDto,
+  ): Promise<PromedioData> {
+    return this.reportesService.obtenerTiempoPromedioSolicitudes(dto);
+  }
+
   @Get("solicitudes/:id/detalle-cierre")
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: "Consultar detalle de cierre de una solicitud completada",
   })
@@ -71,10 +134,9 @@ export class ReportesController {
   async obtenerDetalleSolicitud(
     @Param("id") id: string,
     @Query() query: DetalleSolicitudQueryDto,
+    @CurrentUser() user: JwtPayloadData,
     @Req() req: Request,
   ): Promise<DetalleSolicitudResponseDto> {
-    const authorization = req.headers.authorization;
-    const user = this.jwtReportesService.validateToken(authorization);
     const ip = req.ip || req.socket.remoteAddress || "0.0.0.0";
 
     return this.reportesService.obtenerDetalleSolicitudCompletada(
@@ -87,6 +149,7 @@ export class ReportesController {
   }
 
   @Get("solicitudes/:id/atenciones/exportar")
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Exportar atenciones en PDF o Excel" })
   @ApiBearerAuth("jwt")
   @ApiParam({
@@ -97,7 +160,7 @@ export class ReportesController {
   @ApiQuery({
     name: "formato",
     enum: ["pdf", "excel"],
-    description: "Formato de exportación",
+    description: "Formato de exportacion",
     example: "pdf",
   })
   @ApiOkResponse({
@@ -123,16 +186,15 @@ export class ReportesController {
     description: ">500 registros con formato PDF o solicitud no completada.",
   })
   @ApiInternalServerErrorResponse({
-    description: "Timeout o error al generar el archivo de exportación.",
+    description: "Timeout o error al generar el archivo de exportacion.",
   })
   async exportarAtenciones(
     @Param("id") id: string,
     @Query() query: ExportQueryDto,
+    @CurrentUser() user: JwtPayloadData,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const authorization = req.headers.authorization;
-    const user = this.jwtReportesService.validateToken(authorization);
     const ip = req.ip || req.socket.remoteAddress || "0.0.0.0";
 
     const buffer = await this.reportesService.exportarAtenciones(
@@ -142,7 +204,11 @@ export class ReportesController {
       ip,
     );
 
-    const filename = `atenciones_${id}_${new Date().toISOString().split("T")[0]}.${query.formato === "pdf" ? "pdf" : "xlsx"}`;
+    const extension = query.formato === "pdf" ? "pdf" : "xlsx";
+    const filename = `atenciones_${id}_${new Date()
+      .toISOString()
+      .split("T")[0]}.${extension}`;
+
     res.set({
       "Content-Type":
         query.formato === "pdf"
@@ -154,6 +220,7 @@ export class ReportesController {
   }
 
   @Get("solicitudes/:id/atenciones")
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Obtener listado anidado de atenciones asociadas" })
   @ApiBearerAuth("jwt")
   @ApiParam({
@@ -165,13 +232,13 @@ export class ReportesController {
     name: "page",
     required: false,
     example: 1,
-    description: "Página de atenciones.",
+    description: "Pagina de atenciones.",
   })
   @ApiQuery({
     name: "pageSize",
     required: false,
     example: 25,
-    description: "Cantidad de atenciones por página.",
+    description: "Cantidad de atenciones por pagina.",
   })
   @ApiOkResponse({
     description: "Listado de atenciones recuperado correctamente.",
@@ -193,10 +260,9 @@ export class ReportesController {
   async obtenerAtenciones(
     @Param("id") id: string,
     @Query() query: AtencionQueryDto,
+    @CurrentUser() user: JwtPayloadData,
     @Req() req: Request,
   ): Promise<AtencionesResponseDto> {
-    const authorization = req.headers.authorization;
-    const user = this.jwtReportesService.validateToken(authorization);
     const ip = req.ip || req.socket.remoteAddress || "0.0.0.0";
 
     return this.reportesService.obtenerAtencionesAnidadas(

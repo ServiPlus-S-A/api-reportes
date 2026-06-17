@@ -9,8 +9,15 @@ describe("ReportesController", () => {
     obtenerDetalleSolicitudCompletada: jest.Mock;
     obtenerAtencionesAnidadas: jest.Mock;
     exportarAtenciones: jest.Mock;
+    obtenerTiempoPromedioSolicitudes: jest.Mock;
+    generarReporte: jest.Mock;
   };
-  let jwtService: { validateToken: jest.Mock };
+
+  const user = {
+    sub: "coord-1",
+    role: "coordinador",
+    unidadIds: ["reportes-centro"],
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -29,16 +36,29 @@ describe("ReportesController", () => {
               warnings: [],
             }),
             exportarAtenciones: jest.fn().mockResolvedValue(Buffer.from("PDF")),
+            generarReporte: jest.fn().mockResolvedValue({
+              periodo: "2026-05",
+              tipo: "financiero",
+              totalIngresos: 0,
+              totalEgresos: 0,
+              balance: 0,
+              generadoPor: "coord-1",
+              fechaCreacion: "2026-05-01T00:00:00.000Z",
+              detalles: [],
+            }),
+            obtenerTiempoPromedioSolicitudes: jest.fn().mockResolvedValue({
+              promedio: 9,
+              unidad: "horas",
+              promedioTexto: "0 dia(s), 9 hora(s)",
+              solicitudesProcesadas: 1,
+              historicoUltimos6Meses: [],
+            }),
           },
         },
         {
           provide: JwtReportesService,
           useValue: {
-            validateToken: jest.fn().mockReturnValue({
-              sub: "coord-1",
-              role: "coordinador",
-              unidadIds: ["reportes-centro"],
-            }),
+            validateToken: jest.fn().mockReturnValue(user),
           },
         },
       ],
@@ -46,28 +66,78 @@ describe("ReportesController", () => {
 
     controller = module.get<ReportesController>(ReportesController);
     service = module.get(ReportesService);
-    jwtService = module.get(JwtReportesService);
   });
 
-  it("delegates detalle request to service using jwt payload and request ip", async () => {
+  it("delegates KPI request to service", async () => {
+    const dto = {
+      fechaInicio: "2026-01-01T00:00:00.000Z",
+      fechaFin: "2026-01-31T23:59:59.000Z",
+      tipoServicio: "Finanzas",
+    };
+
+    await controller.obtenerTiempoPromedioSolicitudes(dto);
+
+    expect(service.obtenerTiempoPromedioSolicitudes).toHaveBeenCalledWith(dto);
+  });
+
+  it("wraps report generation failures in bad request response", async () => {
+    service.generarReporte = jest.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(
+      controller.generarReporte(
+        { periodo: "2026-05", tipo: "financiero" },
+        undefined as any,
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        statusCode: 400,
+        message: "No se pudo generar el reporte solicitado.",
+        error: "boom",
+      }),
+    });
+  });
+
+  it("passes explicit user id when generating reports", async () => {
+    await controller.generarReporte(
+      { periodo: "2026-05", tipo: "financiero" },
+      "coord-1",
+    );
+
+    expect(service.generarReporte).toHaveBeenCalledWith(
+      { periodo: "2026-05", tipo: "financiero" },
+      "coord-1",
+    );
+  });
+
+  it("wraps non-error report generation failures", async () => {
+    service.generarReporte = jest.fn().mockRejectedValue("plain failure");
+
+    await expect(
+      controller.generarReporte(
+        { periodo: "2026-05", tipo: "financiero" },
+        "coord-1",
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: "plain failure",
+      }),
+    });
+  });
+
+  it("delegates detalle request to service using guard payload and request ip", async () => {
     await controller.obtenerDetalleSolicitud(
       "REQ-12345",
       { page: 1, pageSize: 10 },
+      user,
       {
         ip: "127.0.0.1",
-        headers: { authorization: "Bearer test-token" },
         socket: { remoteAddress: "127.0.0.1" },
       } as any,
     );
 
-    expect(jwtService.validateToken).toHaveBeenCalledWith("Bearer test-token");
     expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
       "REQ-12345",
-      {
-        sub: "coord-1",
-        role: "coordinador",
-        unidadIds: ["reportes-centro"],
-      },
+      user,
       "127.0.0.1",
       1,
       10,
@@ -75,32 +145,42 @@ describe("ReportesController", () => {
   });
 
   it("uses socket remote address when req.ip is unavailable", async () => {
+<<<<<<< HEAD
     await controller.obtenerDetalleSolicitud("REQ-12345", {}, {
       headers: { authorization: "Bearer test-token" },
       socket: { remoteAddress: "10.0.0.5" },
     } as any);
+=======
+    await controller.obtenerDetalleSolicitud(
+      "REQ-12345",
+      {},
+      user,
+      {
+        socket: { remoteAddress: "10.0.0.5" },
+      } as any,
+    );
+>>>>>>> 59cb741ad17e62ea5e096b0bb60d0bd5a88fa3c6
 
     expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
       "REQ-12345",
-      expect.any(Object),
+      user,
       "10.0.0.5",
       1,
       10,
     );
   });
 
-  describe("obtenerAtenciones", () => {
-    it("should delegate atenciones request to service with JWT and IP", async () => {
-      await controller.obtenerAtenciones(
-        "REQ-12345",
-        { page: 2, pageSize: 25 },
-        {
-          ip: "127.0.0.1",
-          headers: { authorization: "Bearer test-token" },
-          socket: { remoteAddress: "127.0.0.1" },
-        } as any,
-      );
+  it("uses fallback IP for detalle when request has no address", async () => {
+    await controller.obtenerDetalleSolicitud(
+      "REQ-12345",
+      {},
+      user,
+      {
+        socket: {},
+      } as any,
+    );
 
+<<<<<<< HEAD
       expect(jwtService.validateToken).toHaveBeenCalledWith(
         "Bearer test-token",
       );
@@ -132,119 +212,154 @@ describe("ReportesController", () => {
         25,
       );
     });
+=======
+    expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
+      "REQ-12345",
+      user,
+      "0.0.0.0",
+      1,
+      10,
+    );
+>>>>>>> 59cb741ad17e62ea5e096b0bb60d0bd5a88fa3c6
   });
 
-  describe("exportarAtenciones", () => {
-    it("should delegate PDF export to service", async () => {
-      const mockResponse = {
-        set: jest.fn(),
-        send: jest.fn(),
-      };
+  it("delegates atenciones request to service with guard payload and IP", async () => {
+    await controller.obtenerAtenciones(
+      "REQ-12345",
+      { page: 2, pageSize: 25 },
+      user,
+      {
+        ip: "127.0.0.1",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as any,
+    );
 
-      await controller.exportarAtenciones(
-        "REQ-12345",
-        { formato: "pdf" },
-        {
-          ip: "127.0.0.1",
-          headers: { authorization: "Bearer test-token" },
-          socket: { remoteAddress: "127.0.0.1" },
-        } as any,
-        mockResponse as any,
-      );
+    expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
+      "REQ-12345",
+      user,
+      "127.0.0.1",
+      2,
+      25,
+    );
+  });
 
-      expect(service.exportarAtenciones).toHaveBeenCalledWith(
-        "REQ-12345",
-        "pdf",
-        {
-          sub: "coord-1",
-          role: "coordinador",
-          unidadIds: ["reportes-centro"],
-        },
-        "127.0.0.1",
-      );
+  it("uses default atenciones pagination values", async () => {
+    await controller.obtenerAtenciones(
+      "REQ-12345",
+      {},
+      user,
+      {
+        ip: "127.0.0.1",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as any,
+    );
 
-      expect(mockResponse.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          "Content-Type": "application/pdf",
-        }),
-      );
-      expect(mockResponse.send).toHaveBeenCalled();
-    });
+    expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
+      "REQ-12345",
+      user,
+      "127.0.0.1",
+      1,
+      25,
+    );
+  });
 
-    it("should delegate Excel export to service", async () => {
-      const mockResponse = {
-        set: jest.fn(),
-        send: jest.fn(),
-      };
+  it("uses fallback IP for atenciones when request has no address", async () => {
+    await controller.obtenerAtenciones(
+      "REQ-12345",
+      {},
+      user,
+      {
+        socket: {},
+      } as any,
+    );
 
-      await controller.exportarAtenciones(
-        "REQ-12345",
-        { formato: "excel" },
-        {
-          ip: "127.0.0.1",
-          headers: { authorization: "Bearer test-token" },
-          socket: { remoteAddress: "127.0.0.1" },
-        } as any,
-        mockResponse as any,
-      );
+    expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
+      "REQ-12345",
+      user,
+      "0.0.0.0",
+      1,
+      25,
+    );
+  });
 
-      expect(service.exportarAtenciones).toHaveBeenCalledWith(
-        "REQ-12345",
-        "excel",
-        expect.any(Object),
-        "127.0.0.1",
-      );
+  it("delegates PDF export to service", async () => {
+    const mockResponse = {
+      set: jest.fn(),
+      send: jest.fn(),
+    };
 
-      expect(mockResponse.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          "Content-Type":
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }),
-      );
-    });
+    await controller.exportarAtenciones(
+      "REQ-12345",
+      { formato: "pdf" },
+      user,
+      {
+        ip: "127.0.0.1",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as any,
+      mockResponse as any,
+    );
 
-    it("should set correct Content-Disposition header for PDF", async () => {
-      const mockResponse = {
-        set: jest.fn(),
-        send: jest.fn(),
-      };
+    expect(service.exportarAtenciones).toHaveBeenCalledWith(
+      "REQ-12345",
+      "pdf",
+      user,
+      "127.0.0.1",
+    );
+    expect(mockResponse.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "Content-Type": "application/pdf",
+      }),
+    );
+    expect(mockResponse.send).toHaveBeenCalled();
+  });
 
-      await controller.exportarAtenciones(
-        "REQ-12345",
-        { formato: "pdf" },
-        {
-          ip: "127.0.0.1",
-          headers: { authorization: "Bearer test-token" },
-          socket: { remoteAddress: "127.0.0.1" },
-        } as any,
-        mockResponse as any,
-      );
+  it("sets Excel response headers", async () => {
+    const mockResponse = {
+      set: jest.fn(),
+      send: jest.fn(),
+    };
 
-      const headers = mockResponse.set.mock.calls[0][0];
-      expect(headers["Content-Disposition"]).toContain("attachment");
-      expect(headers["Content-Disposition"]).toContain(".pdf");
-    });
+    await controller.exportarAtenciones(
+      "REQ-12345",
+      { formato: "excel" },
+      user,
+      {
+        ip: "127.0.0.1",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as any,
+      mockResponse as any,
+    );
 
-    it("should set correct Content-Disposition header for Excel", async () => {
-      const mockResponse = {
-        set: jest.fn(),
-        send: jest.fn(),
-      };
+    expect(mockResponse.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": expect.stringContaining(".xlsx"),
+      }),
+    );
+  });
 
-      await controller.exportarAtenciones(
-        "REQ-12345",
-        { formato: "excel" },
-        {
-          ip: "127.0.0.1",
-          headers: { authorization: "Bearer test-token" },
-          socket: { remoteAddress: "127.0.0.1" },
-        } as any,
-        mockResponse as any,
-      );
+  it("uses fallback IP for export when request has no address", async () => {
+    const mockResponse = {
+      set: jest.fn(),
+      send: jest.fn(),
+    };
 
-      const headers = mockResponse.set.mock.calls[0][0];
-      expect(headers["Content-Disposition"]).toContain("attachment");
-      expect(headers["Content-Disposition"]).toContain(".xlsx");
-    });
+    await controller.exportarAtenciones(
+      "REQ-12345",
+      { formato: "pdf" },
+      user,
+      {
+        socket: {},
+      } as any,
+      mockResponse as any,
+    );
+
+    expect(service.exportarAtenciones).toHaveBeenCalledWith(
+      "REQ-12345",
+      "pdf",
+      user,
+      "0.0.0.0",
+    );
   });
 });
