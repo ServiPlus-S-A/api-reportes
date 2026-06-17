@@ -1,9 +1,10 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { ClientesAdapter } from "./adapters/clientes.adapter";
 import { ConsultoresAdapter } from "./adapters/consultores.adapter";
 import { ServiciosAdapter } from "./adapters/servicios.adapter";
 import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
+import { AtencionesAdapter } from "./adapters/atenciones.adapter";
 import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
 import { ReportesService } from "./reportes.service";
 
@@ -14,6 +15,7 @@ describe("ReportesService", () => {
   let clientesAdapter: { obtenerClientePorId: jest.Mock };
   let serviciosAdapter: { obtenerServicioPorId: jest.Mock };
   let consultoresAdapter: { obtenerConsultoresPorSolicitud: jest.Mock };
+  let atencionesAdapter: { obtenerAtencionesPorSolicitud: jest.Mock };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -79,6 +81,25 @@ describe("ReportesService", () => {
             ),
           },
         },
+        {
+          provide: AtencionesAdapter,
+          useValue: {
+            obtenerAtencionesPorSolicitud: jest.fn().mockResolvedValue(
+              Array.from({ length: 145 }, (_, index) => ({
+                id: `ate-${String(index + 1).padStart(4, "0")}`,
+                solicitudId: "REQ-12345",
+                descripcion:
+                  index % 3 === 0
+                    ? "Implementación de módulo de gestión de inventario"
+                    : "Soporte técnico",
+                lugar: "Oficina Centro, Bogotá",
+                fechaHora: new Date(2026, 4, 1 + (index % 30)).toISOString(),
+                consultorId: `con-${(index % 12) + 1}`,
+                nombreConsultor: `Consultor ${(index % 12) + 1}`,
+              })),
+            ),
+          },
+        },
       ],
     }).compile();
 
@@ -88,6 +109,7 @@ describe("ReportesService", () => {
     clientesAdapter = module.get(ClientesAdapter);
     serviciosAdapter = module.get(ServiciosAdapter);
     consultoresAdapter = module.get(ConsultoresAdapter);
+    atencionesAdapter = module.get(AtencionesAdapter);
   });
 
   it("should be defined", () => {
@@ -252,5 +274,320 @@ describe("ReportesService", () => {
         "127.0.0.1",
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe("obtenerAtencionesAnidadas", () => {
+    it("should return paginated atenciones", async () => {
+      const result = await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+        1,
+        25,
+      );
+
+      expect(result.solicitudId).toBe("REQ-12345");
+      expect(result.atenciones).toHaveLength(25);
+      expect(result.pagination.total).toBe(145);
+      expect(result.pagination.totalPages).toBe(6);
+      expect(result.pagination.page).toBe(1);
+    });
+
+    it("should paginate correctly on second page", async () => {
+      const result = await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+        2,
+        25,
+      );
+
+      expect(result.atenciones).toHaveLength(25);
+      expect(result.pagination.page).toBe(2);
+    });
+
+    it("should truncate descriptions to 150 characters", async () => {
+      const result = await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      result.atenciones.forEach((atencion) => {
+        if (atencion.descripcion !== "N/A") {
+          expect(atencion.descripcion.length).toBeLessThanOrEqual(153);
+        }
+      });
+    });
+
+    it("should format dates correctly", async () => {
+      const result = await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      result.atenciones.forEach((atencion) => {
+        if (atencion.fecha !== "N/A") {
+          expect(atencion.fecha).toMatch(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/);
+        }
+      });
+    });
+
+    it("should log access with VIEW_ATENCIONES action", async () => {
+      await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(firebaseRepository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "VIEW_ATENCIONES",
+          allowed: true,
+          solicitudId: "REQ-12345",
+        }),
+      );
+    });
+
+    it("should throw forbidden when unidad is not allowed", async () => {
+      await expect(
+        service.obtenerAtencionesAnidadas(
+          "REQ-12345",
+          {
+            sub: "coord-2",
+            role: "coordinador",
+            unidadIds: ["reportes-sur"],
+          },
+          "127.0.0.1",
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(firebaseRepository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          allowed: false,
+          action: "VIEW_ATENCIONES",
+        }),
+      );
+    });
+
+    it("should handle empty atenciones list with warning", async () => {
+      atencionesAdapter.obtenerAtencionesPorSolicitud.mockResolvedValueOnce([]);
+
+      const result = await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(result.atenciones).toHaveLength(0);
+      expect(result.warnings).toContain(
+        "No se encontraron registros de atención para esta solicitud",
+      );
+    });
+
+    it("should add warning if adapter fails", async () => {
+      atencionesAdapter.obtenerAtencionesPorSolicitud.mockRejectedValueOnce(
+        new Error("ADAPTER_ERROR"),
+      );
+
+      const result = await service.obtenerAtencionesAnidadas(
+        "REQ-12345",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(result.warnings).toContain(
+        "Advertencia: No se pudieron cargar las atenciones asociadas",
+      );
+    });
+  });
+
+  describe("exportarAtenciones", () => {
+    it("should export PDF successfully", async () => {
+      const buffer = await service.exportarAtenciones(
+        "REQ-12345",
+        "pdf",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(buffer).toBeInstanceOf(Buffer);
+      expect(buffer.length).toBeGreaterThan(0);
+    });
+
+    it("should export Excel successfully", async () => {
+      const buffer = await service.exportarAtenciones(
+        "REQ-12345",
+        "excel",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(buffer).toBeInstanceOf(Buffer);
+      expect(buffer.length).toBeGreaterThan(0);
+    });
+
+    it("should throw bad request if PDF with >500 records", async () => {
+      atencionesAdapter.obtenerAtencionesPorSolicitud.mockResolvedValueOnce(
+        Array.from({ length: 501 }, (_, i) => ({
+          id: `ate-${i}`,
+          solicitudId: "REQ-12345",
+          descripcion: "Test",
+          lugar: "Office",
+          fechaHora: new Date().toISOString(),
+          consultorId: "con-1",
+          nombreConsultor: "Test Consultor",
+        })),
+      );
+
+      await expect(
+        service.exportarAtenciones(
+          "REQ-12345",
+          "pdf",
+          {
+            sub: "coord-1",
+            role: "coordinador",
+            unidadIds: ["reportes-centro"],
+          },
+          "127.0.0.1",
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("should allow Excel export with >500 records", async () => {
+      atencionesAdapter.obtenerAtencionesPorSolicitud.mockResolvedValueOnce(
+        Array.from({ length: 501 }, (_, i) => ({
+          id: `ate-${i}`,
+          solicitudId: "REQ-12345",
+          descripcion: "Test",
+          lugar: "Office",
+          fechaHora: new Date().toISOString(),
+          consultorId: "con-1",
+          nombreConsultor: "Test Consultor",
+        })),
+      );
+
+      const buffer = await service.exportarAtenciones(
+        "REQ-12345",
+        "excel",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(buffer).toBeInstanceOf(Buffer);
+    });
+
+    it("should log PDF export with EXPORT_ATENCIONES_PDF action", async () => {
+      await service.exportarAtenciones(
+        "REQ-12345",
+        "pdf",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(firebaseRepository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "EXPORT_ATENCIONES_PDF",
+          allowed: true,
+        }),
+      );
+    });
+
+    it("should log Excel export with EXPORT_ATENCIONES_EXCEL action", async () => {
+      await service.exportarAtenciones(
+        "REQ-12345",
+        "excel",
+        {
+          sub: "coord-1",
+          role: "coordinador",
+          unidadIds: ["reportes-centro"],
+        },
+        "127.0.0.1",
+      );
+
+      expect(firebaseRepository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "EXPORT_ATENCIONES_EXCEL",
+          allowed: true,
+        }),
+      );
+    });
+
+    it("should throw forbidden when unidad not allowed", async () => {
+      await expect(
+        service.exportarAtenciones(
+          "REQ-12345",
+          "pdf",
+          {
+            sub: "coord-2",
+            role: "coordinador",
+            unidadIds: ["reportes-sur"],
+          },
+          "127.0.0.1",
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("should throw not found when solicitud does not exist", async () => {
+      solicitudesAdapter.obtenerSolicitudPorId.mockResolvedValueOnce(null);
+
+      await expect(
+        service.exportarAtenciones(
+          "REQ-00000",
+          "pdf",
+          {
+            sub: "coord-1",
+            role: "coordinador",
+            unidadIds: ["reportes-centro"],
+          },
+          "127.0.0.1",
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });
