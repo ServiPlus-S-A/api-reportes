@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { AtencionRaw } from "../interfaces/atenciones.interface";
+import { AtencionRaw } from "../../shared/interfaces/atenciones.interface";
 
 @Injectable()
 export class AtencionesAdapter {

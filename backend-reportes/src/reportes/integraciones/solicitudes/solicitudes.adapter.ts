@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { SolicitudDetalleBase } from "../interfaces/detalle-solicitud.interface";
+import { SolicitudDetalleBase } from "../../shared/interfaces/detalle-solicitud.interface";
 
 @Injectable()
 export class SolicitudesAdapter {

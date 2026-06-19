@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import * as jwt from "jsonwebtoken";
-import { JwtPayloadData } from "../interfaces/detalle-solicitud.interface";
+import { JwtPayloadData } from "../../shared/interfaces/detalle-solicitud.interface";
 
 @Injectable()
 export class JwtReportesService {

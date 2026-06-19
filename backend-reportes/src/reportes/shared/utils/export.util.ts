@@ -1,6 +1,6 @@
 import PDFDocument from "pdfkit";
 import { Workbook } from "exceljs";
-import { AtencionDto } from "../dto/atencion-response.dto";
+import { AtencionDto } from "../../shared/dto/atencion-response.dto";
 
 export async function generarPDF(atenciones: AtencionDto[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {

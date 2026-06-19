@@ -15,12 +15,14 @@ services:
     image: ${DOCKER_USERNAME}/area_reportes:latest
     container_name: api_backend
     restart: always
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:${BACKEND_PORT}:${BACKEND_PORT}"
     environment:
       - PORT=${BACKEND_PORT}
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=${REDIS_PORT}
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
       - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
       - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}

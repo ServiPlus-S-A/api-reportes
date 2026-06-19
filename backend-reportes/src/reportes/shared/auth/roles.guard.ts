@@ -5,7 +5,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { JwtPayloadData } from "../interfaces/detalle-solicitud.interface";
+import { JwtPayloadData } from "../../shared/interfaces/detalle-solicitud.interface";
 import { ROLES_KEY } from "./roles.decorator";
 
 @Injectable()

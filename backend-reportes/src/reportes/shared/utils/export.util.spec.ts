@@ -1,5 +1,5 @@
 import { generarPDF, generarExcel } from "./export.util";
-import { AtencionDto } from "../dto/atencion-response.dto";
+import { AtencionDto } from "../../shared/dto/atencion-response.dto";
 
 describe("export.util", () => {
   const mockAtenciones: AtencionDto[] = [

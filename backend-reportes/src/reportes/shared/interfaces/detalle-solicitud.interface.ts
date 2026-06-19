@@ -1,4 +1,4 @@
-import { ConsultorResumenDto } from "../dto/detalle-solicitud-response.dto";
+import { ConsultorResumenDto } from "../../shared/dto/detalle-solicitud-response.dto";
 
 export interface SolicitudDetalleBase {
   id: string;

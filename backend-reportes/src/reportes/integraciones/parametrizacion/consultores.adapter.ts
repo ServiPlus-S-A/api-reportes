@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { ConsultorResumenDto } from "../dto/detalle-solicitud-response.dto";
+import { ConsultorResumenDto } from "../../shared/dto/detalle-solicitud-response.dto";
 
 @Injectable()
 export class ConsultoresAdapter {
