@@ -17,6 +17,7 @@ import { JwtReportesService } from "./shared/auth/jwt-reportes.service";
 import { JwtAuthGuard } from "./shared/auth/jwt-auth.guard";
 import { RolesGuard } from "./shared/auth/roles.guard";
 import { FirebaseReporteRepository } from "./shared/repositories/firebase-reporte.repository";
+import { RedisCacheService } from "./shared/cache/redis-cache.service";
 
 @Module({
   controllers: [
@@ -38,6 +39,7 @@ import { FirebaseReporteRepository } from "./shared/repositories/firebase-report
     JwtReportesService,
     JwtAuthGuard,
     RolesGuard,
+    RedisCacheService,
   ],
 })
 export class ReportesModule {}

@@ -50,5 +50,26 @@ describe("FinanzasAnalyticsController", () => {
         controller.generarReporte({} as any, "user1"),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it("deberia formatear el error a string si no es una instancia de Error", async () => {
+      service.generarReporte.mockRejectedValue("string error");
+      await expect(
+        controller.generarReporte({} as any, "user1"),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("deberia usar usuario por defecto si no se le pasa header userId", async () => {
+      const mockResult: any = { balance: 50 };
+      service.generarReporte.mockResolvedValue(mockResult);
+
+      await controller.generarReporte(
+        { periodo: "2024", tipo: "anual" } as any,
+        undefined as any,
+      );
+      expect(service.generarReporte).toHaveBeenCalledWith(
+        { periodo: "2024", tipo: "anual" },
+        "anonymous_system_user",
+      );
+    });
   });
 });

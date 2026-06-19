@@ -58,5 +58,41 @@ describe("OperacionService", () => {
       expect(res.promedio).toBe(3); // (2 h + 4 h) / 2
       expect(res.solicitudesProcesadas).toBe(2);
     });
+    it("deberia ignorar solicitudes que no esten completadas al calcular historico y promedio", async () => {
+      const now = new Date();
+      adapter.fetchSolicitudesParaPromedio.mockResolvedValue([
+        {
+          estado: "Completada",
+          fechaCreacion: now.toISOString(),
+          fechaCompletada: new Date(
+            now.getTime() + 2 * 3600 * 1000,
+          ).toISOString(),
+          tipoServicio: "A",
+        },
+        {
+          estado: "En Proceso",
+          fechaCreacion: now.toISOString(),
+          fechaCompletada: null,
+          tipoServicio: "A",
+        },
+      ]);
+
+      const res = await service.obtenerTiempoPromedioSolicitudes({});
+      expect(res.promedio).toBe(2);
+      expect(res.solicitudesProcesadas).toBe(1);
+
+      const historicoReciente =
+        res.historicoUltimos6Meses[res.historicoUltimos6Meses.length - 1];
+      expect(historicoReciente.promedioHoras).toBe(2);
+    });
+
+    it("deberia manejar meses en el historico donde no haya data y retorne 0", async () => {
+      adapter.fetchSolicitudesParaPromedio.mockResolvedValue([]);
+
+      const res = await service.obtenerTiempoPromedioSolicitudes({});
+      expect(
+        res.historicoUltimos6Meses.every((m) => m.promedioHoras === 0),
+      ).toBe(true);
+    });
   });
 });

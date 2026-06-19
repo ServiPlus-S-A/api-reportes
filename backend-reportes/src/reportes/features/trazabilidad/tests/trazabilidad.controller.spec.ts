@@ -83,5 +83,79 @@ describe("TrazabilidadController", () => {
       expect(res).toBeDefined();
       expect(service.obtenerAtencionesAnidadas).toHaveBeenCalled();
     });
+
+    it("resuelve la ip desde remoteAddress o 0.0.0.0 en obtenerDetalleSolicitud", async () => {
+      service.obtenerDetalleSolicitudCompletada.mockResolvedValue({} as any);
+
+      await controller.obtenerDetalleSolicitud(
+        "1",
+        { page: 2 } as any,
+        {} as any,
+        { socket: { remoteAddress: "10.0.0.1" } } as any,
+      );
+      expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
+        "1",
+        {},
+        "10.0.0.1",
+        2,
+        10,
+      );
+
+      await controller.obtenerDetalleSolicitud(
+        "1",
+        { pageSize: 5 } as any,
+        {} as any,
+        { socket: {} } as any,
+      );
+      expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
+        "1",
+        {},
+        "0.0.0.0",
+        1,
+        5,
+      );
+    });
+
+    it("Llama al servicio para exportar atenciones a excel", async () => {
+      const bufferDePrueba = Buffer.from("excel data");
+      service.exportarAtenciones.mockResolvedValue(bufferDePrueba);
+
+      const resObj = { set: jest.fn(), send: jest.fn() };
+
+      await controller.exportarAtenciones(
+        "1",
+        { formato: "excel" },
+        {} as any,
+        { socket: {} } as any, // cubre fallback 0.0.0.0
+        resObj as any,
+      );
+
+      expect(resObj.set).toHaveBeenCalled();
+      expect(resObj.send).toHaveBeenCalledWith(bufferDePrueba);
+      expect(service.exportarAtenciones).toHaveBeenCalledWith(
+        "1",
+        "excel",
+        {},
+        "0.0.0.0",
+      );
+    });
+
+    it("resuelve ip fallback en obtenerAtenciones", async () => {
+      service.obtenerAtencionesAnidadas.mockResolvedValue({} as any);
+
+      await controller.obtenerAtenciones(
+        "1",
+        { page: 2, pageSize: 20 } as any,
+        {} as any,
+        { socket: {} } as any,
+      );
+      expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
+        "1",
+        {},
+        "0.0.0.0",
+        2,
+        20,
+      );
+    });
   });
 });
