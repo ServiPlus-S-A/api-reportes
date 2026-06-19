@@ -27,15 +27,16 @@ describe("SolicitudesAdapter", () => {
   it("should return data from axios when URL is provided", async () => {
     process.env.EXTERNAL_SOLICITUDES_URL = "http://external-solicitudes.com";
     const mockData = [{ id: "sol-1", estado: "Completada" }];
-    fetchMock.mockResolvedValue({ json: jest.fn().mockResolvedValue(mockData) });
+    fetchMock.mockResolvedValue({
+      json: jest.fn().mockResolvedValue(mockData),
+    });
 
     const result = await adapter.fetchSolicitudesParaPromedio();
 
     expect(result).toBe(mockData);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://external-solicitudes.com",
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("http://external-solicitudes.com", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("should return fallback demo data if axios fails", async () => {

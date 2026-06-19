@@ -46,9 +46,9 @@ describe("RolesGuard", () => {
 
   it("allows administrative direction role with accents and spaces", () => {
     const reflector = {
-      getAllAndOverride: jest.fn().mockReturnValue([
-        "direccion_administrativa",
-      ]),
+      getAllAndOverride: jest
+        .fn()
+        .mockReturnValue(["direccion_administrativa"]),
     };
     const guard = new RolesGuard(reflector as any);
 

@@ -114,7 +114,9 @@ describe("ReportesService", () => {
         {
           provide: SolicitudesAdapter,
           useValue: {
-            obtenerSolicitudPorId: jest.fn().mockResolvedValue(solicitudCompletada),
+            obtenerSolicitudPorId: jest
+              .fn()
+              .mockResolvedValue(solicitudCompletada),
             fetchSolicitudesParaPromedio: jest
               .fn()
               .mockResolvedValue(solicitudesPromedio),

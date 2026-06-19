@@ -1,6 +1,5 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { AtencionesAdapter } from "./atenciones.adapter";
-import { AtencionRaw } from "../interfaces/atenciones.interface";
 
 describe("AtencionesAdapter", () => {
   let adapter: AtencionesAdapter;

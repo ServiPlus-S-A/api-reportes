@@ -27,7 +27,9 @@ describe("FinanzasAdapter", () => {
   it("should return data from axios when URL is provided", async () => {
     process.env.EXTERNAL_FINANZAS_URL = "http://external-api.com";
     const mockData = [{ id: "1", monto: 100, tipo: "ingreso" }];
-    fetchMock.mockResolvedValue({ json: jest.fn().mockResolvedValue(mockData) });
+    fetchMock.mockResolvedValue({
+      json: jest.fn().mockResolvedValue(mockData),
+    });
 
     const result = await adapter.fetchIngresosPorPeriodo("2026-05");
 

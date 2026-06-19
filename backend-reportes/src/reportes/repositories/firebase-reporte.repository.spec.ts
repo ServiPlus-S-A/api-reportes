@@ -115,7 +115,8 @@ describe("FirebaseReporteRepository", () => {
     it("should write report audit log to Firestore if initialized", async () => {
       await repository.saveAuditLog(payload);
 
-      const db = (admin.firestore as unknown as jest.Mock).mock.results[0].value;
+      const db = (admin.firestore as unknown as jest.Mock).mock.results[0]
+        .value;
       expect(db.collection).toHaveBeenCalledWith("reporte_audit_logs");
       expect(db.collection("reporte_audit_logs").add).toHaveBeenCalledWith(
         payload,
@@ -139,7 +140,8 @@ describe("FirebaseReporteRepository", () => {
     });
 
     it("should log error if report Firestore write fails", async () => {
-      const db = (admin.firestore as unknown as jest.Mock).mock.results[0].value;
+      const db = (admin.firestore as unknown as jest.Mock).mock.results[0]
+        .value;
       (db.collection("reporte_audit_logs").add as jest.Mock).mockRejectedValue(
         new Error("Firestore Error"),
       );

@@ -104,8 +104,6 @@ describe("export.util", () => {
 
     it("should generate Excel with proper structure", async () => {
       const buffer = await generarExcel(mockAtenciones);
-      const bufferStr = buffer.toString("hex").substring(0, 100);
-      // Excel files start with specific bytes
       expect(buffer.length).toBeGreaterThan(0);
     });
   });

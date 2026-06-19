@@ -1,4 +1,3 @@
-/* istanbul ignore file */
 import { createParamDecorator, ExecutionContext } from "@nestjs/common";
 import { JwtPayloadData } from "../interfaces/detalle-solicitud.interface";
 

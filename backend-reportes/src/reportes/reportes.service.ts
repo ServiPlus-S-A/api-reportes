@@ -16,7 +16,10 @@ import { AtencionRaw } from "./interfaces/atenciones.interface";
 import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
 import { PromedioData } from "./interfaces/promedioInterface";
 import { ReporteData } from "./interfaces/reporte.interface";
-import { AtencionDto, AtencionesResponseDto } from "./dto/atencion-response.dto";
+import {
+  AtencionDto,
+  AtencionesResponseDto,
+} from "./dto/atencion-response.dto";
 import {
   ConsultorResumenDto,
   DetalleSolicitudResponseDto,
@@ -91,13 +94,11 @@ export class ReportesService {
       const fechaCreacion = new Date(solicitud.fechaCreacion);
       const coincideTipo =
         !dto.tipoServicio ||
-        solicitud.tipoServicio.toLowerCase() ===
-          dto.tipoServicio.toLowerCase();
+        solicitud.tipoServicio.toLowerCase() === dto.tipoServicio.toLowerCase();
       const coincideRango =
         fechaCreacion >= fechaInicio && fechaCreacion <= fechaFin;
       const esCompletada =
-        solicitud.estado === "Completada" &&
-        solicitud.fechaCompletada !== null;
+        solicitud.estado === "Completada" && solicitud.fechaCompletada !== null;
 
       return coincideTipo && coincideRango && esCompletada;
     });
@@ -494,19 +495,37 @@ export class ReportesService {
       await this.solicitudesAdapter.obtenerSolicitudPorId(solicitudId);
 
     if (!solicitud) {
-      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      await this.registrarAccesoAtencion(
+        solicitudId,
+        user.sub,
+        ip,
+        action,
+        false,
+      );
       throw new NotFoundException("No se encontro la solicitud solicitada.");
     }
 
     if (solicitud.estado !== "completada") {
-      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      await this.registrarAccesoAtencion(
+        solicitudId,
+        user.sub,
+        ip,
+        action,
+        false,
+      );
       throw new BadRequestException(
         "Solo se permite consultar solicitudes completadas.",
       );
     }
 
     if (!user.unidadIds.includes(solicitud.unidadId)) {
-      await this.registrarAccesoAtencion(solicitudId, user.sub, ip, action, false);
+      await this.registrarAccesoAtencion(
+        solicitudId,
+        user.sub,
+        ip,
+        action,
+        false,
+      );
       throw new ForbiddenException(
         "Permisos insuficientes para visualizar este informe de costos",
       );

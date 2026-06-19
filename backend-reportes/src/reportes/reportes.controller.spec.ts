@@ -145,21 +145,9 @@ describe("ReportesController", () => {
   });
 
   it("uses socket remote address when req.ip is unavailable", async () => {
-<<<<<<< HEAD
-    await controller.obtenerDetalleSolicitud("REQ-12345", {}, {
-      headers: { authorization: "Bearer test-token" },
+    await controller.obtenerDetalleSolicitud("REQ-12345", {}, user, {
       socket: { remoteAddress: "10.0.0.5" },
     } as any);
-=======
-    await controller.obtenerDetalleSolicitud(
-      "REQ-12345",
-      {},
-      user,
-      {
-        socket: { remoteAddress: "10.0.0.5" },
-      } as any,
-    );
->>>>>>> 59cb741ad17e62ea5e096b0bb60d0bd5a88fa3c6
 
     expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
       "REQ-12345",
@@ -171,48 +159,10 @@ describe("ReportesController", () => {
   });
 
   it("uses fallback IP for detalle when request has no address", async () => {
-    await controller.obtenerDetalleSolicitud(
-      "REQ-12345",
-      {},
-      user,
-      {
-        socket: {},
-      } as any,
-    );
+    await controller.obtenerDetalleSolicitud("REQ-12345", {}, user, {
+      socket: {},
+    } as any);
 
-<<<<<<< HEAD
-      expect(jwtService.validateToken).toHaveBeenCalledWith(
-        "Bearer test-token",
-      );
-      expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
-        "REQ-12345",
-        {
-          sub: "coord-1",
-          role: "coordinador",
-          unidadIds: ["reportes-centro"],
-        },
-        "127.0.0.1",
-        2,
-        25,
-      );
-    });
-
-    it("should use default pagination values", async () => {
-      await controller.obtenerAtenciones("REQ-12345", {}, {
-        ip: "127.0.0.1",
-        headers: { authorization: "Bearer test-token" },
-        socket: { remoteAddress: "127.0.0.1" },
-      } as any);
-
-      expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
-        "REQ-12345",
-        expect.any(Object),
-        "127.0.0.1",
-        1,
-        25,
-      );
-    });
-=======
     expect(service.obtenerDetalleSolicitudCompletada).toHaveBeenCalledWith(
       "REQ-12345",
       user,
@@ -220,7 +170,6 @@ describe("ReportesController", () => {
       1,
       10,
     );
->>>>>>> 59cb741ad17e62ea5e096b0bb60d0bd5a88fa3c6
   });
 
   it("delegates atenciones request to service with guard payload and IP", async () => {
@@ -244,15 +193,10 @@ describe("ReportesController", () => {
   });
 
   it("uses default atenciones pagination values", async () => {
-    await controller.obtenerAtenciones(
-      "REQ-12345",
-      {},
-      user,
-      {
-        ip: "127.0.0.1",
-        socket: { remoteAddress: "127.0.0.1" },
-      } as any,
-    );
+    await controller.obtenerAtenciones("REQ-12345", {}, user, {
+      ip: "127.0.0.1",
+      socket: { remoteAddress: "127.0.0.1" },
+    } as any);
 
     expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
       "REQ-12345",
@@ -264,14 +208,9 @@ describe("ReportesController", () => {
   });
 
   it("uses fallback IP for atenciones when request has no address", async () => {
-    await controller.obtenerAtenciones(
-      "REQ-12345",
-      {},
-      user,
-      {
-        socket: {},
-      } as any,
-    );
+    await controller.obtenerAtenciones("REQ-12345", {}, user, {
+      socket: {},
+    } as any);
 
     expect(service.obtenerAtencionesAnidadas).toHaveBeenCalledWith(
       "REQ-12345",

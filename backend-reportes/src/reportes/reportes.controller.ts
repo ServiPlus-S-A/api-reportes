@@ -46,9 +46,7 @@ import { ReportesService } from "./reportes.service";
 @ApiTags("Reportes")
 @Controller("reportes")
 export class ReportesController {
-  constructor(
-    private readonly reportesService: ReportesService,
-  ) {}
+  constructor(private readonly reportesService: ReportesService) {}
 
   @Post("generar")
   @HttpCode(HttpStatus.OK)
@@ -205,9 +203,9 @@ export class ReportesController {
     );
 
     const extension = query.formato === "pdf" ? "pdf" : "xlsx";
-    const filename = `atenciones_${id}_${new Date()
-      .toISOString()
-      .split("T")[0]}.${extension}`;
+    const filename = `atenciones_${id}_${
+      new Date().toISOString().split("T")[0]
+    }.${extension}`;
 
     res.set({
       "Content-Type":
