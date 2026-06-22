@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { SolicitudDesempenoRaw } from "../../shared/interfaces/desempeno-tecnicos.interface";
 import { SolicitudDetalleBase } from "../../shared/interfaces/detalle-solicitud.interface";
+import { SolicitudEnEjecucionRaw } from "../../shared/interfaces/solicitud-ejecucion.interface";
 
 interface SolicitudMock
   extends
@@ -11,6 +12,10 @@ interface SolicitudMock
   tipoServicio?: string;
   fechaCreacion?: string | null;
   fechaCompletada?: string | null;
+  prioridad?: "Alta" | "Media" | "Baja";
+  tecnicoNombre?: string | null;
+  fechaInicioEjecucion?: string;
+  porcentajeAvance?: number;
 }
 
 @Injectable()
@@ -147,6 +152,45 @@ export class SolicitudesAdapter {
       calificacion: 3.9,
     },
     {
+      id: "REQ-EJEC-001",
+      estado: "En Ejecución",
+      clienteId: "cli-001",
+      clienteNombre: "Industrias Nova SAS",
+      servicioId: "srv-001",
+      servicioNombre: "Implementacion de mesa de ayuda",
+      prioridad: "Alta",
+      tecnicoId: "tec-001",
+      tecnicoNombre: "Andrea Salazar",
+      fechaInicioEjecucion: "2026-06-22T08:00:00Z",
+      porcentajeAvance: 45,
+    },
+    {
+      id: "REQ-EJEC-002",
+      estado: "En Proceso",
+      clienteId: "cli-002",
+      clienteNombre: "Ferreteria Universal",
+      servicioId: "srv-002",
+      servicioNombre: "Mantenimiento preventivo",
+      prioridad: "Media",
+      tecnicoId: "tec-002",
+      tecnicoNombre: "Jhon Cuero",
+      fechaInicioEjecucion: "2026-06-22T10:30:00Z",
+      porcentajeAvance: 12,
+    },
+    {
+      id: "REQ-EJEC-003",
+      estado: "En Ejecución",
+      clienteId: "cli-003",
+      clienteNombre: "Consultores y Cia",
+      servicioId: "srv-003",
+      servicioNombre: "Soporte Nivel 2",
+      prioridad: "Baja",
+      tecnicoId: "tec-004",
+      tecnicoNombre: "Julian Munoz",
+      fechaInicioEjecucion: "2026-06-21T14:00:00Z",
+      porcentajeAvance: 78,
+    },
+    {
       id: "sol-des-007",
       estado: "Completada",
       fechaFinalizacion: "2026-06-03T10:30:00.000Z",
@@ -250,6 +294,23 @@ export class SolicitudesAdapter {
         tecnicoId: solicitud.tecnicoId!,
         especialidad: solicitud.especialidad!,
         calificacion: solicitud.calificacion ?? null,
+      }));
+  }
+
+  async obtenerSolicitudesEnEjecucion(): Promise<SolicitudEnEjecucionRaw[]> {
+    return this.solicitudesMock
+      .filter((s) => s.estado === "En Ejecución" || s.estado === "En Proceso")
+      .map((solicitud) => ({
+        id: solicitud.id,
+        estado: solicitud.estado,
+        clienteNombre: solicitud.clienteNombre ?? "Desconocido",
+        servicioNombre: solicitud.servicioNombre ?? "No especificado",
+        prioridad: solicitud.prioridad ?? "Media",
+        tecnicoId: solicitud.tecnicoId ?? null,
+        tecnicoNombre: solicitud.tecnicoNombre ?? "Sin asignar",
+        fechaInicioEjecucion:
+          solicitud.fechaInicioEjecucion ?? new Date().toISOString(),
+        porcentajeAvance: solicitud.porcentajeAvance ?? 0,
       }));
   }
 }

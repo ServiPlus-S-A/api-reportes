@@ -19,6 +19,10 @@ import {
   ConsultorResumenDto,
   DetalleSolicitudResponseDto,
 } from "../../shared/dto/detalle-solicitud-response.dto";
+import {
+  SolicitudesEjecucionQueryDto,
+  SolicitudesEjecucionResponseDto,
+} from "../../shared/dto/solicitudes-ejecucion.dto";
 import { JwtPayloadData } from "../../shared/interfaces/detalle-solicitud.interface";
 import { AtencionRaw } from "../../shared/interfaces/atenciones.interface";
 import { generarExcel, generarPDF } from "../../shared/utils/export.util";
@@ -119,6 +123,71 @@ export class TrazabilidadService {
         .slice(start, start + pageSize)
         .map((c) => this.normalizarConsultor(c)),
       metadata: { warnings, pagination: { page, pageSize, total, totalPages } },
+    };
+  }
+
+  async obtenerSolicitudesEnEjecucion(
+    query: SolicitudesEjecucionQueryDto,
+    user: JwtPayloadData,
+    ip: string,
+  ): Promise<SolicitudesEjecucionResponseDto> {
+    await this.registrarAccesoEjecucion(user.sub, ip, true);
+
+    const solicitudesRaw =
+      await this.solicitudesAdapter.obtenerSolicitudesEnEjecucion();
+
+    let filtradas = solicitudesRaw;
+
+    if (query.tecnicoId) {
+      filtradas = filtradas.filter((s) => s.tecnicoId === query.tecnicoId);
+    }
+
+    if (query.ordenarPor === "prioridad") {
+      const ordenPrioridad: Record<string, number> = {
+        Alta: 1,
+        Media: 2,
+        Baja: 3,
+      };
+      filtradas.sort((a, b) => {
+        const pA = ordenPrioridad[a.prioridad] || 4;
+        const pB = ordenPrioridad[b.prioridad] || 4;
+        return pA - pB;
+      });
+    } else if (query.ordenarPor === "fechaInicio") {
+      filtradas.sort((a, b) => {
+        return (
+          new Date(b.fechaInicioEjecucion).getTime() -
+          new Date(a.fechaInicioEjecucion).getTime()
+        );
+      });
+    }
+
+    const now = Date.now();
+    const solicitudes = filtradas.map((s) => {
+      const inicio = new Date(s.fechaInicioEjecucion).getTime();
+      const tiempoTranscurridoMinutos = Math.max(
+        0,
+        Math.floor((now - inicio) / 60000),
+      );
+
+      return {
+        id: s.id,
+        cliente: s.clienteNombre ?? "N/A",
+        servicio: s.servicioNombre ?? "N/A",
+        prioridad: s.prioridad,
+        tecnicoAsignado: s.tecnicoNombre ?? "N/A",
+        fechaInicioEjecucion: s.fechaInicioEjecucion,
+        tiempoTranscurridoMinutos,
+        porcentajeAvance: s.porcentajeAvance,
+      };
+    });
+
+    const capacidadOperativa = 5;
+
+    return {
+      solicitudes,
+      total: solicitudes.length,
+      capacidadOperativa,
     };
   }
 
@@ -357,6 +426,21 @@ export class TrazabilidadService {
     await this.firebaseRepository.saveAccessLog({
       action,
       solicitudId,
+      userId,
+      timestamp: this.generarTimestampAuditoria(),
+      ip,
+      allowed,
+    });
+  }
+
+  private async registrarAccesoEjecucion(
+    userId: string,
+    ip: string,
+    allowed: boolean,
+  ): Promise<void> {
+    await this.firebaseRepository.saveAccessLog({
+      action: "VIEW_SOLICITUDES_EJECUCION",
+      solicitudId: "N/A",
       userId,
       timestamp: this.generarTimestampAuditoria(),
       ip,

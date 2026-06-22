@@ -6,6 +6,7 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import {
@@ -28,8 +29,16 @@ import { DetalleSolicitudResponseDto } from "../../shared/dto/detalle-solicitud-
 import { ExportQueryDto } from "../../shared/dto/export-query.dto";
 import { AtencionQueryDto } from "../../shared/dto/atencion-query.dto";
 import { AtencionesResponseDto } from "../../shared/dto/atencion-response.dto";
+import {
+  SolicitudesEjecucionQueryDto,
+  SolicitudesEjecucionResponseDto,
+} from "../../shared/dto/solicitudes-ejecucion.dto";
 import { JwtPayloadData } from "../../shared/interfaces/detalle-solicitud.interface";
 import { TrazabilidadService } from "./trazabilidad.service";
+import { RedisCacheInterceptor } from "../../shared/cache/redis-cache.interceptor";
+import { UseRedisCache } from "../../shared/cache/redis-cache.decorator";
+import { RolesGuard } from "../../shared/auth/roles.guard";
+import { Roles } from "../../shared/auth/roles.decorator";
 
 @ApiTags("Reportes - Trazabilidad")
 @Controller("reportes")
@@ -187,6 +196,37 @@ export class TrazabilidadController {
       ip,
       query.page ?? 1,
       query.pageSize ?? 25,
+    );
+  }
+
+  @Get("solicitudes/en-ejecucion")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador")
+  @ApiOperation({
+    summary: "Consultar solicitudes en ejecución (En Proceso, En Ejecución)",
+  })
+  @ApiBearerAuth("jwt")
+  @UseInterceptors(RedisCacheInterceptor)
+  @UseRedisCache("trazabilidad:ejecucion", 60)
+  @ApiOkResponse({
+    description:
+      "Listado de solicitudes en ejecución recuperado correctamente.",
+    type: SolicitudesEjecucionResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: "Token JWT requerido o inválido." })
+  @ApiForbiddenResponse({
+    description: "Permisos insuficientes para visualizar este informe.",
+  })
+  async obtenerSolicitudesEnEjecucion(
+    @Query() query: SolicitudesEjecucionQueryDto,
+    @CurrentUser() user: JwtPayloadData,
+    @Req() req: Request,
+  ): Promise<SolicitudesEjecucionResponseDto> {
+    const ip = req.ip || req.socket.remoteAddress || "0.0.0.0";
+    return this.trazabilidadService.obtenerSolicitudesEnEjecucion(
+      query,
+      user,
+      ip,
     );
   }
 }

@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { TrazabilidadController } from "../trazabilidad.controller";
 import { TrazabilidadService } from "../trazabilidad.service";
 import { JwtAuthGuard } from "../../../shared/auth/jwt-auth.guard";
+import { RedisCacheInterceptor } from "../../../shared/cache/redis-cache.interceptor";
 
 describe("TrazabilidadController", () => {
   let controller: TrazabilidadController;
@@ -17,12 +18,15 @@ describe("TrazabilidadController", () => {
             obtenerDetalleSolicitudCompletada: jest.fn(),
             exportarAtenciones: jest.fn(),
             obtenerAtencionesAnidadas: jest.fn(),
+            obtenerSolicitudesEnEjecucion: jest.fn(),
           },
         },
       ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
+      .overrideInterceptor(RedisCacheInterceptor)
+      .useValue({ intercept: (context: any, next: any) => next.handle() })
       .compile();
 
     controller = module.get<TrazabilidadController>(TrazabilidadController);
@@ -155,6 +159,46 @@ describe("TrazabilidadController", () => {
         "0.0.0.0",
         2,
         20,
+      );
+    });
+
+    it("Llama al servicio para obtener solicitudes en ejecución", async () => {
+      service.obtenerSolicitudesEnEjecucion.mockResolvedValue({
+        solicitudes: [],
+        total: 0,
+        capacidadOperativa: 5,
+      } as any);
+
+      const res = await controller.obtenerSolicitudesEnEjecucion(
+        {} as any,
+        {} as any,
+        { ip: "127.0.0.1" } as any,
+      );
+      expect(res).toBeDefined();
+      expect(service.obtenerSolicitudesEnEjecucion).toHaveBeenCalledWith(
+        {},
+        {},
+        "127.0.0.1",
+      );
+    });
+
+    it("resuelve la ip fallback en obtenerSolicitudesEnEjecucion", async () => {
+      service.obtenerSolicitudesEnEjecucion.mockResolvedValue({
+        solicitudes: [],
+        total: 0,
+        capacidadOperativa: 5,
+      } as any);
+
+      const res = await controller.obtenerSolicitudesEnEjecucion(
+        {} as any,
+        {} as any,
+        { socket: {} } as any,
+      );
+      expect(res).toBeDefined();
+      expect(service.obtenerSolicitudesEnEjecucion).toHaveBeenCalledWith(
+        {},
+        {},
+        "0.0.0.0",
       );
     });
   });
