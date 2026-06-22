@@ -57,7 +57,9 @@ export class RedisCacheInterceptor implements NestInterceptor {
         this.logger.log(`Cache HIT for key: ${actualKey}`);
         return of(JSON.parse(cached));
       }
-    } catch (e) {}
+    } catch (e) {
+      this.logger.warn(`Error reading from cache: ${e.message}`);
+    }
 
     this.logger.log(
       `Cache MISS for key: ${actualKey}. Guardando resultados procesados...`,
@@ -71,7 +73,9 @@ export class RedisCacheInterceptor implements NestInterceptor {
             JSON.stringify(response),
             ttlSeconds || 3600,
           );
-        } catch (e) {}
+        } catch (e) {
+          this.logger.warn(`Error writing to cache: ${e.message}`);
+        }
       }),
     );
   }

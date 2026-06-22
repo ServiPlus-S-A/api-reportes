@@ -3,7 +3,8 @@ import { SolicitudDesempenoRaw } from "../../shared/interfaces/desempeno-tecnico
 import { SolicitudDetalleBase } from "../../shared/interfaces/detalle-solicitud.interface";
 
 interface SolicitudMock
-  extends Omit<Partial<SolicitudDetalleBase>, "estado">,
+  extends
+    Omit<Partial<SolicitudDetalleBase>, "estado">,
     Partial<SolicitudDesempenoRaw> {
   id: string;
   estado: string;

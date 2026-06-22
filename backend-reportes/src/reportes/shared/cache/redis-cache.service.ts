@@ -14,7 +14,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.client = new Redis({
       host: process.env.REDIS_HOST || "localhost",
-      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+      port: Number.parseInt(process.env.REDIS_PORT || "6379", 10),
       maxRetriesPerRequest: 1,
       retryStrategy(times) {
         if (times > 2) return null;
