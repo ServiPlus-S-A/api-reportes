@@ -1,1 +1,9 @@
 node_modules
+dist
+.env
+npm-debug.log
+.git
+.github
+ coverage
+ .DS_Store
+ .vscode

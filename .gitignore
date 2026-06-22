@@ -14,3 +14,4 @@ blob-report/
 .env.*.local
 docs/
 .secrets
+.scannerwork/
