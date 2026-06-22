@@ -5,6 +5,8 @@ import { FinanzasAnalyticsController } from "./features/finanzas-analytics/finan
 import { FinanzasAnalyticsService } from "./features/finanzas-analytics/finanzas-analytics.service";
 import { TrazabilidadController } from "./features/trazabilidad/trazabilidad.controller";
 import { TrazabilidadService } from "./features/trazabilidad/trazabilidad.service";
+import { DesempenoTecnicosController } from "./features/desempeno-tecnicos/desempeno-tecnicos.controller";
+import { DesempenoTecnicosService } from "./features/desempeno-tecnicos/desempeno-tecnicos.service";
 
 import { AtencionesAdapter } from "./integraciones/atenciones/atenciones.adapter";
 import { ClientesAdapter } from "./integraciones/parametrizacion/clientes.adapter";
@@ -24,11 +26,13 @@ import { RedisCacheService } from "./shared/cache/redis-cache.service";
     OperacionController,
     FinanzasAnalyticsController,
     TrazabilidadController,
+    DesempenoTecnicosController,
   ],
   providers: [
     OperacionService,
     FinanzasAnalyticsService,
     TrazabilidadService,
+    DesempenoTecnicosService,
     FirebaseReporteRepository,
     FinanzasAdapter,
     SolicitudesAdapter,

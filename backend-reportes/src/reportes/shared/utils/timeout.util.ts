@@ -4,15 +4,25 @@ export async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
 ): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout | undefined;
+
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       reject(
         new InternalServerErrorException(
           "Tiempo de espera agotado al generar el archivo, intente nuevamente",
         ),
       );
     }, timeoutMs);
+
+    timeoutHandle.unref?.();
   });
 
-  return Promise.race([promise, timeoutPromise]);
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
