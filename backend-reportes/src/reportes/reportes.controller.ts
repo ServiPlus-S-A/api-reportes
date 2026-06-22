@@ -273,4 +273,144 @@ export class ReportesController {
       query.pageSize ?? 25,
     );
   }
+
+  @Get("clientes")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: "Obtener listado de clientes o filtrar por departamento",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiQuery({
+    name: "depto",
+    required: false,
+    description: "Departamento para filtrar los clientes",
+    example: "Antioquia",
+  })
+  @ApiOkResponse({
+    description: "Listado de clientes recuperado correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este informe de clientes",
+  })
+  async obtenerClientes(@Query("depto") depto?: string) {
+    return this.reportesService.obtenerClientes(depto);
+  }
+
+  @Get("clientes/distribucion")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador", "direccion_administrativa", "direccion_comercial")
+  @ApiOperation({
+    summary:
+      "Obtener distribución consolidada de clientes por ciudad y departamento con porcentaje",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiQuery({
+    name: "tipo",
+    required: false,
+    enum: ["empresa", "persona", "pyme"],
+    description: "Filtro por tipo de cliente",
+    example: "empresa",
+  })
+  @ApiQuery({
+    name: "estado",
+    required: false,
+    enum: ["activo", "inactivo"],
+    description: "Filtro por estado del cliente",
+    example: "activo",
+  })
+  @ApiOkResponse({
+    description: "Distribución consolidada de clientes recuperada correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este reporte consolidado",
+  })
+  async obtenerDistribucionClientes(
+    @Query("tipo") tipo?: string,
+    @Query("estado") estado?: string,
+  ) {
+    return this.reportesService.obtenerDistribucionClientesPorDepartamento(
+      tipo,
+      estado,
+    );
+  }
+
+  @Get("clientes/distribucion-por-departamento")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador", "direccion_administrativa", "direccion_comercial")
+  @ApiOperation({
+    summary:
+      "Obtener distribución de clientes por departamento con porcentaje y listado de ciudades",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiQuery({
+    name: "tipo",
+    required: false,
+    enum: ["empresa", "persona", "pyme"],
+    description: "Filtro por tipo de cliente",
+    example: "empresa",
+  })
+  @ApiQuery({
+    name: "estado",
+    required: false,
+    enum: ["activo", "inactivo"],
+    description: "Filtro por estado del cliente",
+    example: "activo",
+  })
+  @ApiOkResponse({
+    description:
+      "Distribución consolidada de clientes por departamento recuperada correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este reporte consolidado",
+  })
+  async obtenerDistribucionClientesPorDepartamentoResumen(
+    @Query("tipo") tipo?: string,
+    @Query("estado") estado?: string,
+  ) {
+    return this.reportesService.obtenerDistribucionClientesPorDepartamentoResumen(
+      tipo,
+      estado,
+    );
+  }
+
+  @Get("clientes/:id")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: "Obtener un cliente por su identificador",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiParam({
+    name: "id",
+    required: true,
+    example: "cli-001",
+    description: "Id único del cliente.",
+  })
+  @ApiOkResponse({
+    description: "Cliente recuperado correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este informe de clientes",
+  })
+  @ApiNotFoundResponse({
+    description: "No se encontro el cliente solicitado.",
+  })
+  async obtenerClientePorID(@Param("id") id: string) {
+    return this.reportesService.obtenerClientePorID(id);
+  }
 }

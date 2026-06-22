@@ -18,6 +18,7 @@ services:
     ports:
       - "127.0.0.1:${BACKEND_PORT}:${BACKEND_PORT}"
     environment:
+      - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT}
       - REDIS_HOST=redis
       - REDIS_PORT=6379

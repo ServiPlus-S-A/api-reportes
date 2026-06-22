@@ -621,4 +621,35 @@ export class ReportesService {
       allowed,
     });
   }
+
+  async obtenerClientes(depto?: string) {
+    if (depto) {
+      return await this.clientesAdapter.obtenerClientesDepto(depto);
+    }
+    return await this.clientesAdapter.obtenerClientes();
+  }
+
+  async obtenerClientePorID(id: string) {
+    return await this.clientesAdapter.obtenerClientePorId(id);
+  }
+
+  async obtenerDistribucionClientesPorDepartamento(
+    tipo?: string,
+    estado?: string,
+  ) {
+    return await this.clientesAdapter.obtenerDistribucionClientesPorDepartamento(
+      tipo,
+      estado,
+    );
+  }
+
+  async obtenerDistribucionClientesPorDepartamentoResumen(
+    tipo?: string,
+    estado?: string,
+  ) {
+    return await this.clientesAdapter.obtenerDistribucionClientesPorDepartamentoResumen(
+      tipo,
+      estado,
+    );
+  }
 }
