@@ -1,7 +1,4 @@
-export type EspecialidadTecnica =
-  | "Soporte"
-  | "Mantenimiento"
-  | "Consultoria";
+export type EspecialidadTecnica = "Soporte" | "Mantenimiento" | "Consultoria";
 
 export interface TecnicoDesempenoRaw {
   id: string;

@@ -82,6 +82,10 @@ describe("FirebaseReporteRepository", () => {
     });
 
     it("should log error if Firestore write fails", async () => {
+      const loggerSpy = jest
+        .spyOn((repository as any).logger, "error")
+        .mockImplementation(() => undefined);
+
       const db = (admin.firestore as unknown as jest.Mock).mock.results[0]
         .value;
       (db.collection("audit_logs").add as jest.Mock).mockRejectedValue(
@@ -96,6 +100,12 @@ describe("FirebaseReporteRepository", () => {
         ip: "127.0.0.1",
         allowed: true,
       });
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Error saving access audit log to Firebase: Firestore Error",
+        ),
+      );
     });
   });
 
@@ -140,6 +150,10 @@ describe("FirebaseReporteRepository", () => {
     });
 
     it("should log error if report Firestore write fails", async () => {
+      const loggerSpy = jest
+        .spyOn((repository as any).logger, "error")
+        .mockImplementation(() => undefined);
+
       const db = (admin.firestore as unknown as jest.Mock).mock.results[0]
         .value;
       (db.collection("reporte_audit_logs").add as jest.Mock).mockRejectedValue(
@@ -147,6 +161,12 @@ describe("FirebaseReporteRepository", () => {
       );
 
       await repository.saveAuditLog(payload);
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Error saving report audit log to Firebase: Firestore Error",
+        ),
+      );
     });
   });
 });
