@@ -18,6 +18,26 @@ describe("FinanzasAdapter", () => {
   afterEach(() => {
     jest.clearAllMocks();
     delete process.env.EXTERNAL_FINANZAS_URL;
+    delete process.env.EXTERNAL_FINANZAS_EXPORT_URL;
+  });
+
+  it("returns financial invoices filtered by date for export", async () => {
+    const result = await adapter.fetchFacturasParaExportar(
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-31T23:59:59.999Z",
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        idFactura: expect.any(String),
+        nombreCliente: expect.any(String),
+        tipoServicio: expect.any(String),
+        valorServicio: expect.any(Number),
+        impuestosAplicados: expect.any(Number),
+        totalNeto: expect.any(Number),
+      }),
+    );
   });
 
   it("should be defined", () => {
