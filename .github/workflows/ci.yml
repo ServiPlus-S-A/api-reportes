@@ -44,6 +44,10 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      pull-requests: write
+
     defaults:
       run:
         working-directory: backend-reportes
@@ -51,6 +55,8 @@ jobs:
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -89,6 +95,14 @@ jobs:
 
         env:
           CI: true
+
+      - name: Análisis estático y cobertura (SonarCloud)
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: backend-reportes
 
       - name: Docker build
         run: docker build -t backend-reportes:ci .
