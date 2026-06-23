@@ -72,4 +72,18 @@ describe("DesempenoTecnicosController", () => {
     expect(res.set).toHaveBeenCalled();
     expect(res.send).toHaveBeenCalledWith(buffer);
   });
+
+  it("debe exportar el consolidado en excel y escribir el buffer", async () => {
+    const dto = { fechaInicio: "2026-05-01", fechaFin: "2026-05-31" };
+    const query = { formato: "excel" as const };
+    const buffer = Buffer.from("excel");
+    const res = { set: jest.fn(), send: jest.fn() } as any;
+
+    service.exportarConsolidado.mockResolvedValue(buffer);
+    await controller.exportarConsolidado(dto, query, res);
+
+    expect(service.exportarConsolidado).toHaveBeenCalledWith(dto, query);
+    expect(res.set).toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(buffer);
+  });
 });

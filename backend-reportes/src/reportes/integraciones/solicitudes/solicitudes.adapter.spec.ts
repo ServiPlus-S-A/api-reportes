@@ -49,6 +49,15 @@ describe("SolicitudesAdapter", () => {
     expect(result[0]).toHaveProperty("id");
   });
 
+  it("should return fallback demo data if fetch rejects with non-Error value", async () => {
+    process.env.EXTERNAL_SOLICITUDES_URL = "http://external-solicitudes.com";
+    fetchMock.mockRejectedValue("connection refused");
+
+    const result = await adapter.fetchSolicitudesParaPromedio();
+
+    expect(result).toHaveLength(6);
+  });
+
   it("should return fallback demo data if URL is empty", async () => {
     process.env.EXTERNAL_SOLICITUDES_URL = "";
 
@@ -73,5 +82,74 @@ describe("SolicitudesAdapter", () => {
     const result = await adapter.fetchSolicitudesParaDesempeno();
     expect(result.length).toBeGreaterThan(0);
     expect(result[0]).toHaveProperty("tecnicoId");
+  });
+
+  // ─── obtenerSolicitudesEnEjecucion ───────────────────────────────────────────
+
+  describe("obtenerSolicitudesEnEjecucion", () => {
+    it("debe retornar solo solicitudes con estado En Ejecución o En Proceso", async () => {
+      const result = await adapter.obtenerSolicitudesEnEjecucion();
+
+      expect(result.length).toBeGreaterThan(0);
+      result.forEach((s) => {
+        expect(["En Ejecución", "En Proceso"]).toContain(s.estado);
+      });
+    });
+
+    it("debe retornar la estructura correcta de cada solicitud", async () => {
+      const result = await adapter.obtenerSolicitudesEnEjecucion();
+      const first = result[0];
+
+      expect(first).toHaveProperty("id");
+      expect(first).toHaveProperty("estado");
+      expect(first).toHaveProperty("clienteNombre");
+      expect(first).toHaveProperty("servicioNombre");
+      expect(first).toHaveProperty("prioridad");
+      expect(first).toHaveProperty("tecnicoId");
+      expect(first).toHaveProperty("tecnicoNombre");
+      expect(first).toHaveProperty("fechaInicioEjecucion");
+      expect(first).toHaveProperty("porcentajeAvance");
+    });
+
+    it("debe usar fallbacks cuando faltan datos opcionales", async () => {
+      // sol-des-004 es estado 'En Proceso' pero no tiene clienteNombre, servicioNombre, etc.
+      const result = await adapter.obtenerSolicitudesEnEjecucion();
+      const sinCliente = result.find((s) => s.id === "sol-des-004");
+
+      // Como sol-des-004 no tiene clienteNombre → fallback "Desconocido"
+      expect(sinCliente).toBeDefined();
+      expect(sinCliente!.clienteNombre).toBe("Desconocido");
+      expect(sinCliente!.servicioNombre).toBe("No especificado");
+      expect(sinCliente!.prioridad).toBe("Media");
+      expect(sinCliente!.tecnicoNombre).toBe("Sin asignar");
+      expect(sinCliente!.porcentajeAvance).toBe(0);
+    });
+
+    it("debe retornar solicitud REQ-EJEC-001 con datos reales (sin fallback)", async () => {
+      const result = await adapter.obtenerSolicitudesEnEjecucion();
+      const ejec = result.find((s) => s.id === "REQ-EJEC-001");
+
+      expect(ejec).toBeDefined();
+      expect(ejec!.clienteNombre).toBe("Industrias Nova SAS");
+      expect(ejec!.servicioNombre).toBe("Implementacion de mesa de ayuda");
+      expect(ejec!.prioridad).toBe("Alta");
+      expect(ejec!.tecnicoId).toBe("tec-001");
+      expect(ejec!.tecnicoNombre).toBe("Andrea Salazar");
+      expect(ejec!.porcentajeAvance).toBe(45);
+    });
+
+    it("debe asignar fechaInicioEjecucion actual como fallback si no existe en el mock", async () => {
+      const before = Date.now();
+      const result = await adapter.obtenerSolicitudesEnEjecucion();
+      const after = Date.now();
+
+      // sol-des-004 no tiene fechaInicioEjecucion → se genera de new Date()
+      const sinFecha = result.find((s) => s.id === "sol-des-004");
+      expect(sinFecha).toBeDefined();
+
+      const generada = new Date(sinFecha!.fechaInicioEjecucion).getTime();
+      expect(generada).toBeGreaterThanOrEqual(before);
+      expect(generada).toBeLessThanOrEqual(after);
+    });
   });
 });

@@ -166,6 +166,37 @@ describe("DesempenoTecnicosService", () => {
     expect(result.resultados[0].cantidadServiciosCompletados).toBe(1);
   });
 
+  it("debe excluir solicitudes sin fecha de finalizacion valida", async () => {
+    consultoresAdapter.obtenerTecnicosParaDesempeno.mockResolvedValue([
+      { id: "tec-1", nombre: "Andrea", especialidad: "Soporte" },
+    ]);
+    solicitudesAdapter.fetchSolicitudesParaDesempeno.mockResolvedValue([
+      {
+        id: "sol-1",
+        estado: "Completada",
+        fechaFinalizacion: "fecha-invalida", // Dispara Number.isNaN(fechaCierre.getTime())
+        tecnicoId: "tec-1",
+        especialidad: "Soporte",
+        calificacion: 5,
+      },
+      {
+        id: "sol-2",
+        estado: "Completada",
+        fechaFinalizacion: null as any, // Sin fecha (branch ya cubierto por if !solicitud.fechaFinalizacion)
+        tecnicoId: "tec-1",
+        especialidad: "Soporte",
+        calificacion: 5,
+      },
+    ]);
+
+    const result = await service.obtenerConsolidado({
+      fechaInicio: "2026-05-01",
+      fechaFin: "2026-05-31",
+    });
+
+    expect(result.totalServiciosCompletados).toBe(0);
+  });
+
   it("debe exportar el consolidado en excel", async () => {
     consultoresAdapter.obtenerTecnicosParaDesempeno.mockResolvedValue([
       { id: "tec-1", nombre: "Andrea", especialidad: "Soporte" },
@@ -191,5 +222,46 @@ describe("DesempenoTecnicosService", () => {
 
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(buffer.length).toBeGreaterThan(0);
+  });
+
+  it("debe exportar el consolidado en pdf", async () => {
+    consultoresAdapter.obtenerTecnicosParaDesempeno.mockResolvedValue([
+      { id: "tec-1", nombre: "Andrea", especialidad: "Soporte" },
+    ]);
+    solicitudesAdapter.fetchSolicitudesParaDesempeno.mockResolvedValue([
+      {
+        id: "sol-1",
+        estado: "Completada",
+        fechaFinalizacion: "2026-05-02T12:00:00Z",
+        tecnicoId: "tec-1",
+        especialidad: "Soporte",
+        calificacion: 4.2,
+      },
+    ]);
+
+    const buffer = await service.exportarConsolidado(
+      {
+        fechaInicio: "2026-05-01",
+        fechaFin: "2026-05-31",
+      },
+      { formato: "pdf" },
+    );
+
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(0);
+  });
+
+  it("debe poder parsear boundary de fecha con un formato custom que no requiere sufijo", async () => {
+    // Si parseBoundary recibe un Date completo por ej, o un "2026-05-01T15:00:00Z", entra en `new Date(value)`
+    // ya que no cumple /^\d{4}-\d{2}-\d{2}$/
+    consultoresAdapter.obtenerTecnicosParaDesempeno.mockResolvedValue([]);
+    solicitudesAdapter.fetchSolicitudesParaDesempeno.mockResolvedValue([]);
+
+    const result = await service.obtenerConsolidado({
+      fechaInicio: "2026-05-01T00:00:00.000Z", // No cumple el regex ^\d{4}-\d{2}-\d{2}$
+      fechaFin: "2026-05-31T23:59:59.000Z",
+    });
+
+    expect(result.totalServiciosCompletados).toBe(0);
   });
 });
