@@ -19,6 +19,9 @@ describe("TrazabilidadController", () => {
             exportarAtenciones: jest.fn(),
             obtenerAtencionesAnidadas: jest.fn(),
             obtenerSolicitudesEnEjecucion: jest.fn(),
+            obtenerClientes: jest.fn(),
+            obtenerClientePorID: jest.fn(),
+            obtenerReporteConsolidadoClientes: jest.fn(),
           },
         },
       ],
@@ -199,6 +202,59 @@ describe("TrazabilidadController", () => {
         {},
         {},
         "0.0.0.0",
+      );
+    });
+
+    it("llama al servicio para obtener clientes con filtro opcional de departamento", async () => {
+      service.obtenerClientes.mockResolvedValue([{ id: "cli-1" }] as any);
+
+      const res = await controller.obtenerClientes("Antioquia");
+
+      expect(res).toEqual([{ id: "cli-1" }]);
+      expect(service.obtenerClientes).toHaveBeenCalledWith("Antioquia");
+    });
+
+    it("llama al servicio para obtener un cliente por id", async () => {
+      service.obtenerClientePorID.mockResolvedValue({ id: "cli-1" } as any);
+
+      const res = await controller.obtenerClientePorID("cli-1");
+
+      expect(res).toEqual({ id: "cli-1" });
+      expect(service.obtenerClientePorID).toHaveBeenCalledWith("cli-1");
+    });
+
+    it("llama al servicio para distribución consolidada de clientes", async () => {
+      service.obtenerReporteConsolidadoClientes.mockResolvedValue({
+        tabla: [],
+      } as any);
+
+      const res = await controller.obtenerDistribucionClientes({
+        tipo: "empresarial",
+        estado: "activo",
+      } as any);
+
+      expect(res).toEqual({ tabla: [] });
+      expect(service.obtenerReporteConsolidadoClientes).toHaveBeenCalledWith(
+        "empresarial",
+        "activo",
+      );
+    });
+
+    it("mantiene compatibilidad con distribución por departamento", async () => {
+      service.obtenerReporteConsolidadoClientes.mockResolvedValue({
+        grafico: [],
+      } as any);
+
+      const res =
+        await controller.obtenerDistribucionClientesPorDepartamentoResumen({
+          tipo: "persona_natural",
+          estado: "inactivo",
+        } as any);
+
+      expect(res).toEqual({ grafico: [] });
+      expect(service.obtenerReporteConsolidadoClientes).toHaveBeenCalledWith(
+        "persona_natural",
+        "inactivo",
       );
     });
   });

@@ -447,4 +447,21 @@ export class TrazabilidadService {
       allowed,
     });
   }
+
+  async obtenerClientes(depto?: string) {
+    return depto
+      ? this.clientesAdapter.obtenerClientesDepto(depto)
+      : this.clientesAdapter.obtenerClientes();
+  }
+
+  async obtenerClientePorID(id: string) {
+    return this.clientesAdapter.obtenerClientePorId(id);
+  }
+
+  async obtenerReporteConsolidadoClientes(tipo?: string, estado?: string) {
+    return this.clientesAdapter.obtenerReporteConsolidadoPorCiudad(
+      tipo,
+      estado,
+    );
+  }
 }

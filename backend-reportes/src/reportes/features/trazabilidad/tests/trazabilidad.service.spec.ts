@@ -149,7 +149,7 @@ describe("TrazabilidadService", () => {
       );
       clientesAdapter.obtenerClientePorId.mockResolvedValue({
         nombre: "Cliente Test",
-      });
+      } as any);
       serviciosAdapter.obtenerServicioPorId.mockResolvedValue({
         nombre: "Servicio Test",
         tipo: "Consultoria",
@@ -200,7 +200,7 @@ describe("TrazabilidadService", () => {
       );
       clientesAdapter.obtenerClientePorId.mockResolvedValue({
         nombre: "Cliente Test",
-      });
+      } as any);
       serviciosAdapter.obtenerServicioPorId.mockRejectedValue(
         new Error("SERVICE_CATALOG_UNAVAILABLE"),
       );
@@ -229,7 +229,7 @@ describe("TrazabilidadService", () => {
       );
       clientesAdapter.obtenerClientePorId.mockResolvedValue({
         nombre: "Cliente",
-      });
+      } as any);
       serviciosAdapter.obtenerServicioPorId.mockResolvedValue({
         nombre: "Srv",
         tipo: "X",
