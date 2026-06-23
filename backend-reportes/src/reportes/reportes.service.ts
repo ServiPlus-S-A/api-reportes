@@ -6,26 +6,29 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { AtencionesAdapter } from "./adapters/atenciones.adapter";
-import { ClientesAdapter } from "./adapters/clientes.adapter";
-import { ConsultoresAdapter } from "./adapters/consultores.adapter";
-import { FinanzasAdapter } from "./adapters/finanzas.adapter";
-import { ServiciosAdapter } from "./adapters/servicios.adapter";
-import { SolicitudesAdapter } from "./adapters/solicitudes.adapter";
-import { AtencionRaw } from "./interfaces/atenciones.interface";
-import { JwtPayloadData } from "./interfaces/detalle-solicitud.interface";
-import { PromedioData } from "./interfaces/promedioInterface";
-import { ReporteData } from "./interfaces/reporte.interface";
-import { AtencionDto, AtencionesResponseDto } from "./dto/atencion-response.dto";
+import { AtencionesAdapter } from "./integraciones/atenciones/atenciones.adapter";
+import { ClientesAdapter } from "./integraciones/parametrizacion/clientes.adapter";
+import { ConsultoresAdapter } from "./integraciones/parametrizacion/consultores.adapter";
+import { FinanzasAdapter } from "./integraciones/finanzas/finanzas.adapter";
+import { ServiciosAdapter } from "./integraciones/parametrizacion/servicios.adapter";
+import { SolicitudesAdapter } from "./integraciones/solicitudes/solicitudes.adapter";
+import { AtencionRaw } from "./shared/interfaces/atenciones.interface";
+import { JwtPayloadData } from "./shared/interfaces/detalle-solicitud.interface";
+import { PromedioData } from "./shared/interfaces/promedioInterface";
+import { ReporteData } from "./shared/interfaces/reporte.interface";
+import {
+  AtencionDto,
+  AtencionesResponseDto,
+} from "./shared/dto/atencion-response.dto";
 import {
   ConsultorResumenDto,
   DetalleSolicitudResponseDto,
-} from "./dto/detalle-solicitud-response.dto";
-import { GenerarReporteDto } from "./dto/generar-reporte.dto";
-import { TiempoPromedioDto } from "./dto/tiempo-promedio";
-import { FirebaseReporteRepository } from "./repositories/firebase-reporte.repository";
-import { generarExcel, generarPDF } from "./utils/export.util";
-import { withTimeout } from "./utils/timeout.util";
+} from "./shared/dto/detalle-solicitud-response.dto";
+import { GenerarReporteDto } from "./shared/dto/generar-reporte.dto";
+import { TiempoPromedioDto } from "./shared/dto/tiempo-promedio";
+import { FirebaseReporteRepository } from "./shared/repositories/firebase-reporte.repository";
+import { generarExcel, generarPDF } from "./shared/utils/export.util";
+import { withTimeout } from "./shared/utils/timeout.util";
 
 @Injectable()
 export class ReportesService {
