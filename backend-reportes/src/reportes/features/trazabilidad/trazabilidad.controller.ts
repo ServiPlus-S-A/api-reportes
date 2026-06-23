@@ -23,6 +23,9 @@ import {
 } from "@nestjs/swagger";
 import { CurrentUser } from "../../shared/auth/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/auth/jwt-auth.guard";
+import { RolesGuard } from "../../shared/auth/roles.guard";
+import { Roles } from "../../shared/auth/roles.decorator";
+import { DistribucionClientesQueryDto } from "../../shared/dto/distribucion-clientes-query.dto";
 import { DetalleSolicitudQueryDto } from "../../shared/dto/detalle-solicitud-query.dto";
 import { DetalleSolicitudResponseDto } from "../../shared/dto/detalle-solicitud-response.dto";
 import { ExportQueryDto } from "../../shared/dto/export-query.dto";
@@ -187,6 +190,150 @@ export class TrazabilidadController {
       ip,
       query.page ?? 1,
       query.pageSize ?? 25,
+    );
+  }
+
+  @Get("clientes")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: "Obtener listado de clientes o filtrar por departamento",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiQuery({
+    name: "depto",
+    required: false,
+    description: "Departamento para filtrar los clientes",
+    example: "Antioquia",
+  })
+  @ApiOkResponse({
+    description: "Listado de clientes recuperado correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este informe de clientes",
+  })
+  async obtenerClientes(@Query("depto") depto?: string) {
+    return this.trazabilidadService.obtenerClientes(depto);
+  }
+
+  @Get("clientes/distribucion")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador_administrativo", "direccion_comercial")
+  @ApiOperation({
+    summary:
+      "Obtener distribución consolidada de clientes por ciudad y departamento con porcentaje",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiQuery({
+    name: "tipo",
+    required: false,
+    enum: ["empresarial", "persona_natural"],
+    description: "Filtro por tipo de cliente",
+    example: "empresarial",
+  })
+  @ApiQuery({
+    name: "estado",
+    required: false,
+    enum: ["activo", "inactivo"],
+    description: "Filtro por estado del cliente",
+    example: "activo",
+  })
+  @ApiOkResponse({
+    description: "Distribución consolidada de clientes recuperada correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este reporte consolidado",
+  })
+  async obtenerDistribucionClientes(
+    @Query() query: DistribucionClientesQueryDto,
+  ) {
+    return this.trazabilidadService.obtenerReporteConsolidadoClientes(
+      query.tipo,
+      query.estado,
+    );
+  }
+
+  @Get("clientes/distribucion-por-departamento")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador_administrativo", "direccion_comercial")
+  @ApiOperation({
+    summary:
+      "Obtener distribución de clientes por departamento con porcentaje y listado de ciudades",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiQuery({
+    name: "tipo",
+    required: false,
+    enum: ["empresa", "persona", "pyme"],
+    description: "Filtro por tipo de cliente",
+    example: "empresa",
+  })
+  @ApiQuery({
+    name: "estado",
+    required: false,
+    enum: ["activo", "inactivo"],
+    description: "Filtro por estado del cliente",
+    example: "activo",
+  })
+  @ApiOkResponse({
+    description:
+      "Distribución consolidada de clientes por departamento recuperada correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este reporte consolidado",
+  })
+  async obtenerDistribucionClientesPorDepartamentoResumen(
+    @Query() query: DistribucionClientesQueryDto,
+  ) {
+    return this.obtenerReporteConsolidadoClientes(query);
+  }
+
+  @Get("clientes/:id")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: "Obtener un cliente por su identificador",
+  })
+  @ApiBearerAuth("jwt")
+  @ApiParam({
+    name: "id",
+    required: true,
+    example: "cli-001",
+    description: "Id único del cliente.",
+  })
+  @ApiOkResponse({
+    description: "Cliente recuperado correctamente.",
+  })
+  @ApiUnauthorizedResponse({
+    description: "Token JWT requerido o invalido.",
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Permisos insuficientes para visualizar este informe de clientes",
+  })
+  @ApiNotFoundResponse({
+    description: "No se encontro el cliente solicitado.",
+  })
+  async obtenerClientePorID(@Param("id") id: string) {
+    return this.trazabilidadService.obtenerClientePorID(id);
+  }
+
+  private obtenerReporteConsolidadoClientes(
+    query: DistribucionClientesQueryDto,
+  ) {
+    return this.trazabilidadService.obtenerReporteConsolidadoClientes(
+      query.tipo,
+      query.estado,
     );
   }
 }

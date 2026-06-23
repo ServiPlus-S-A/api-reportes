@@ -21,6 +21,7 @@ services:
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"
     environment:
+      - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT}
       - REDIS_HOST=redis
       - REDIS_PORT=${REDIS_PORT}

@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { Observable, of } from "rxjs";
 import { tap } from "rxjs/operators";
+import { createHash } from "node:crypto";
 import { RedisCacheService } from "./redis-cache.service";
 import { Reflector } from "@nestjs/core";
 import {
@@ -44,11 +45,10 @@ export class RedisCacheInterceptor implements NestInterceptor {
     let actualKey = keyPattern;
 
     if (request.method === "POST" && request.body) {
-      actualKey +=
-        ":" +
-        Buffer.from(JSON.stringify(request.body))
-          .toString("base64")
-          .substring(0, 32);
+      const bodyHash = createHash("sha256")
+        .update(JSON.stringify(request.body))
+        .digest("hex");
+      actualKey += `:${bodyHash}`;
     }
 
     try {

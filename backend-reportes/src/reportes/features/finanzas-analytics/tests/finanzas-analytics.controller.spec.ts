@@ -2,6 +2,8 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { FinanzasAnalyticsController } from "../finanzas-analytics.controller";
 import { FinanzasAnalyticsService } from "../finanzas-analytics.service";
 import { BadRequestException } from "@nestjs/common";
+import { JwtAuthGuard } from "../../../shared/auth/jwt-auth.guard";
+import { RolesGuard } from "../../../shared/auth/roles.guard";
 
 describe("FinanzasAnalyticsController", () => {
   let controller: FinanzasAnalyticsController;
@@ -13,10 +15,18 @@ describe("FinanzasAnalyticsController", () => {
       providers: [
         {
           provide: FinanzasAnalyticsService,
-          useValue: { generarReporte: jest.fn() },
+          useValue: {
+            generarReporte: jest.fn(),
+            exportarReporteFinanciero: jest.fn(),
+          },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<FinanzasAnalyticsController>(
       FinanzasAnalyticsController,
@@ -70,6 +80,34 @@ describe("FinanzasAnalyticsController", () => {
         { periodo: "2024", tipo: "anual" },
         "anonymous_system_user",
       );
+    });
+  });
+
+  describe("exportarReporteFinanciero", () => {
+    it("envía el archivo con headers de descarga", async () => {
+      const buffer = Buffer.from("archivo");
+      service.exportarReporteFinanciero.mockResolvedValue({
+        buffer,
+        contentType: "application/pdf",
+        nombreArchivo: "reporte.pdf",
+        totalRegistros: 2,
+      });
+      const response = { set: jest.fn(), send: jest.fn() } as any;
+      const dto = {
+        formato: "pdf",
+        fechaInicio: "2026-01-01",
+        fechaFin: "2026-01-31",
+      } as any;
+
+      await controller.exportarReporteFinanciero(dto, response);
+
+      expect(response.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "Content-Type": "application/pdf",
+          "X-Total-Registros": "2",
+        }),
+      );
+      expect(response.send).toHaveBeenCalledWith(buffer);
     });
   });
 });

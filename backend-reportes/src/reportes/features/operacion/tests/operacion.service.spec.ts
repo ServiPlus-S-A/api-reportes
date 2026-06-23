@@ -34,6 +34,8 @@ describe("OperacionService", () => {
       expect(res.mensaje).toBe(
         "Sin datos de cierre para el periodo consultado",
       );
+      expect(res.promedioTexto).toBe("0.0");
+      expect(res.historicoUltimos6Meses).toHaveLength(6);
     });
 
     it("deberia calcular promedio de horas exitosamente para solicitudes cerradas dentro del rango", async () => {
@@ -93,6 +95,81 @@ describe("OperacionService", () => {
       expect(
         res.historicoUltimos6Meses.every((m) => m.promedioHoras === 0),
       ).toBe(true);
+    });
+
+    it("incluye todo el día indicado como fecha fin", async () => {
+      adapter.fetchSolicitudesParaPromedio.mockResolvedValue([
+        {
+          estado: "Completada",
+          fechaCreacion: "2026-01-31T18:00:00Z",
+          fechaCompletada: "2026-01-31T20:00:00Z",
+          tipoServicio: "A",
+        },
+      ]);
+
+      const res = await service.obtenerTiempoPromedioSolicitudes({
+        fechaInicio: "2026-01-31",
+        fechaFin: "2026-01-31",
+      });
+      expect(res.solicitudesProcesadas).toBe(1);
+    });
+
+    it("rechaza un rango de fechas invertido", async () => {
+      await expect(
+        service.obtenerTiempoPromedioSolicitudes({
+          fechaInicio: "2026-02-01",
+          fechaFin: "2026-01-01",
+        }),
+      ).rejects.toThrow(
+        "La fecha de inicio no puede ser posterior a la fecha fin",
+      );
+    });
+
+    it("excluye canceladas, anuladas y duraciones inválidas", async () => {
+      adapter.fetchSolicitudesParaPromedio.mockResolvedValue([
+        {
+          estado: "Cancelada",
+          fechaCreacion: "2026-01-01T00:00:00Z",
+          fechaCompletada: "2026-01-01T01:00:00Z",
+          tipoServicio: "A",
+        },
+        {
+          estado: "Anulada",
+          fechaCreacion: "2026-01-01T00:00:00Z",
+          fechaCompletada: null,
+          tipoServicio: "A",
+        },
+        {
+          estado: "Completada",
+          fechaCreacion: "2026-01-02T02:00:00Z",
+          fechaCompletada: "2026-01-02T01:00:00Z",
+          tipoServicio: "A",
+        },
+      ]);
+
+      const res = await service.obtenerTiempoPromedioSolicitudes({});
+      expect(res.solicitudesProcesadas).toBe(0);
+      expect(res.promedioTexto).toBe("0.0");
+    });
+
+    it("agrupa el histórico por el mes de cierre aunque la creación sea del mes anterior", async () => {
+      const now = new Date();
+      const cierre = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 1),
+      );
+      const creacion = new Date(cierre.getTime() - 2 * 60 * 60 * 1000);
+      adapter.fetchSolicitudesParaPromedio.mockResolvedValue([
+        {
+          estado: "Completada",
+          fechaCreacion: creacion.toISOString(),
+          fechaCompletada: cierre.toISOString(),
+          tipoServicio: "A",
+        },
+      ]);
+
+      const res = await service.obtenerTiempoPromedioSolicitudes({});
+      expect(res.historicoUltimos6Meses.at(-1)?.promedioHoras).toBe(2);
+      expect(adapter.fetchSolicitudesParaPromedio).toHaveBeenCalledTimes(1);
     });
   });
 });

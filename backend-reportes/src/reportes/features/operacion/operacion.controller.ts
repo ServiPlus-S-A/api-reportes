@@ -39,7 +39,7 @@ export class OperacionController {
   })
   @ApiForbiddenResponse({
     description:
-      "Permisos insuficientes para visualizar este informe de costos",
+      "Permisos insuficientes para visualizar este indicador de eficiencia",
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("coordinador", "direccion_administrativa")
