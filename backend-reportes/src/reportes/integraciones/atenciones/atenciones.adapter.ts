@@ -10,57 +10,7 @@ export class AtencionesAdapter {
     const atenciones = [];
 
     for (let i = 1; i <= 145; i++) {
-      atenciones.push({
-        id: `ate-${String(i).padStart(4, "0")}`,
-        solicitudId: "REQ-12345",
-        descripcion:
-          i % 3 === 0
-            ? "Implementación de módulo de gestión de inventario con funcionalidades avanzadas"
-            : i % 3 === 1
-              ? "Soporte técnico y ajustes de configuración del sistema principal"
-              : "Capacitación al equipo de trabajo en nuevas herramientas",
-        lugar:
-          i % 5 === 0
-            ? "Oficina Centro, Bogotá"
-            : i % 5 === 1
-              ? "Oficina Norte, Medellín"
-              : i % 5 === 2
-                ? "Oficina Sur, Cali"
-                : i % 5 === 3
-                  ? "Oficina Este, Barranquilla"
-                  : "Oficina Oeste, Bucaramanga",
-        fechaHora: new Date(
-          2026,
-          4,
-          i % 30 === 0 ? 1 : i % 30,
-          8 + (i % 12),
-        ).toISOString(),
-        consultorId: `con-${String((i % 12) + 1).padStart(3, "0")}`,
-        nombreConsultor:
-          i % 12 === 1
-            ? "Andrea Salazar"
-            : i % 12 === 2
-              ? "Jhon Cuero"
-              : i % 12 === 3
-                ? "Sofia Rojas"
-                : i % 12 === 4
-                  ? "Julian Muñoz"
-                  : i % 12 === 5
-                    ? "Daniela Renteria"
-                    : i % 12 === 6
-                      ? "Camilo Giraldo"
-                      : i % 12 === 7
-                        ? "Nicolas Osorio"
-                        : i % 12 === 8
-                          ? "Maria Mejia"
-                          : i % 12 === 9
-                            ? "Hector Solis"
-                            : i % 12 === 10
-                              ? "Paula Torres"
-                              : i % 12 === 11
-                                ? "Luis Parra"
-                                : "Valeria Quintero",
-      });
+      atenciones.push(this.crearAtencionMock(i));
     }
 
     return {
@@ -86,6 +36,62 @@ export class AtencionesAdapter {
         },
       ],
     };
+  }
+
+  private crearAtencionMock(i: number): AtencionRaw {
+    return {
+      id: `ate-${String(i).padStart(4, "0")}`,
+      solicitudId: "REQ-12345",
+      descripcion: this.getMockDescripcion(i),
+      lugar: this.getMockLugar(i),
+      fechaHora: this.getMockFechaHora(i),
+      consultorId: `con-${String((i % 12) + 1).padStart(3, "0")}`,
+      nombreConsultor: this.getMockNombreConsultor(i),
+    };
+  }
+
+  private getMockDescripcion(i: number): string {
+    const descripciones = [
+      "Implementación de módulo de gestión de inventario con funcionalidades avanzadas",
+      "Soporte técnico y ajustes de configuración del sistema principal",
+      "Capacitación al equipo de trabajo en nuevas herramientas",
+    ];
+    return descripciones[i % 3];
+  }
+
+  private getMockLugar(i: number): string {
+    const lugares = [
+      "Oficina Centro, Bogotá",
+      "Oficina Norte, Medellín",
+      "Oficina Sur, Cali",
+      "Oficina Este, Barranquilla",
+      "Oficina Oeste, Bucaramanga",
+    ];
+    return lugares[i % 5];
+  }
+
+  private getMockFechaHora(i: number): string {
+    const day = i % 30 === 0 ? 1 : i % 30;
+    const hour = 8 + (i % 12);
+    return new Date(2026, 4, day, hour).toISOString();
+  }
+
+  private getMockNombreConsultor(i: number): string {
+    const nombres = [
+      "Valeria Quintero",
+      "Andrea Salazar",
+      "Jhon Cuero",
+      "Sofia Rojas",
+      "Julian Muñoz",
+      "Daniela Renteria",
+      "Camilo Giraldo",
+      "Nicolas Osorio",
+      "Maria Mejia",
+      "Hector Solis",
+      "Paula Torres",
+      "Luis Parra",
+    ];
+    return nombres[i % 12];
   }
 
   async obtenerAtencionesPorSolicitud(

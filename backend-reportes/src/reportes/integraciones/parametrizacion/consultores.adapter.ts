@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConsultorResumenDto } from "../../shared/dto/detalle-solicitud-response.dto";
+import { TecnicoDesempenoRaw } from "../../shared/interfaces/desempeno-tecnicos.interface";
 
 @Injectable()
 export class ConsultoresAdapter {
@@ -27,9 +28,34 @@ export class ConsultoresAdapter {
     ],
   };
 
+  private readonly tecnicosDesempeno: TecnicoDesempenoRaw[] = [
+    { id: "tec-001", nombre: "Andrea Salazar", especialidad: "Soporte" },
+    {
+      id: "tec-002",
+      nombre: "Julian Munoz",
+      especialidad: "Mantenimiento",
+    },
+    { id: "tec-003", nombre: "Paula Torres", especialidad: "Consultoria" },
+    { id: "tec-004", nombre: "Camilo Giraldo", especialidad: "Soporte" },
+    {
+      id: "tec-005",
+      nombre: "Valeria Quintero",
+      especialidad: "Mantenimiento",
+    },
+    {
+      id: "tec-006",
+      nombre: "Nicolas Osorio",
+      especialidad: "Consultoria",
+    },
+  ];
+
   async obtenerConsultoresPorSolicitud(
     solicitudId: string,
   ): Promise<ConsultorResumenDto[]> {
     return this.consultoresPorSolicitud[solicitudId] ?? [];
+  }
+
+  async obtenerTecnicosParaDesempeno(): Promise<TecnicoDesempenoRaw[]> {
+    return this.tecnicosDesempeno;
   }
 }

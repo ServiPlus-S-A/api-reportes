@@ -24,7 +24,7 @@ export class FinanzasAnalyticsService {
     private readonly comercialAdapter: ComercialAdapter,
   ) {
     const redisHost = process.env.REDIS_HOST || "localhost";
-    const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10);
+    const redisPort = Number.parseInt(process.env.REDIS_PORT || "6379", 10);
 
     try {
       this.redisClient = new Redis({
@@ -61,25 +61,13 @@ export class FinanzasAnalyticsService {
   ): Promise<ReporteData> {
     const cacheKey = `reporte:${dto.tipo}:${dto.periodo}`;
 
-    if (this.redisClient && this.redisClient.status === "ready") {
-      try {
-        const cachedData = await this.redisClient.get(cacheKey);
-        if (cachedData) {
-          this.logger.log(`Cache Hit for key: ${cacheKey}`);
-          const parseResult = JSON.parse(cachedData) as ReporteData;
-          await this.firebaseRepository.saveAuditLog({
-            ...parseResult,
-            generadoPor: usuario,
-          });
-          return parseResult;
-        }
-      } catch (cacheError) {
-        const message =
-          cacheError instanceof Error ? cacheError.message : String(cacheError);
-        this.logger.warn(
-          `Failed to read cache: ${message}. Proceeding to source.`,
-        );
-      }
+    const cached = await this.getFromCache(cacheKey);
+    if (cached) {
+      await this.firebaseRepository.saveAuditLog({
+        ...cached,
+        generadoPor: usuario,
+      });
+      return cached;
     }
 
     const rawData = await this.finanzasAdapter.fetchIngresosPorPeriodo(
@@ -110,23 +98,7 @@ export class FinanzasAnalyticsService {
       detalles: rawData,
     };
 
-    if (this.redisClient && this.redisClient.status === "ready") {
-      try {
-        await this.redisClient.set(
-          cacheKey,
-          JSON.stringify(nuevoReporte),
-          "EX",
-          3600,
-        );
-      } catch (cacheWriteError) {
-        const message =
-          cacheWriteError instanceof Error
-            ? cacheWriteError.message
-            : String(cacheWriteError);
-        this.logger.warn(`Failed to save report to cache: ${message}`);
-      }
-    }
-
+    await this.saveToCache(cacheKey, nuevoReporte);
     await this.firebaseRepository.saveAuditLog(nuevoReporte);
     return nuevoReporte;
   }
@@ -269,5 +241,38 @@ export class FinanzasAnalyticsService {
 
   private generarTimestampAuditoria(): string {
     return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
+  private async getFromCache(key: string): Promise<ReporteData | null> {
+    if (!this.redisClient || this.redisClient.status !== "ready") return null;
+
+    try {
+      const cachedData = await this.redisClient.get(key);
+      if (cachedData) {
+        this.logger.log(`Cache Hit for key: ${key}`);
+        return JSON.parse(cachedData) as ReporteData;
+      }
+    } catch (cacheError) {
+      const message =
+        cacheError instanceof Error ? cacheError.message : String(cacheError);
+      this.logger.warn(
+        `Failed to read cache: ${message}. Proceeding to source.`,
+      );
+    }
+    return null;
+  }
+
+  private async saveToCache(key: string, data: ReporteData): Promise<void> {
+    if (!this.redisClient || this.redisClient.status !== "ready") return;
+
+    try {
+      await this.redisClient.set(key, JSON.stringify(data), "EX", 3600);
+    } catch (cacheWriteError) {
+      const message =
+        cacheWriteError instanceof Error
+          ? cacheWriteError.message
+          : String(cacheWriteError);
+      this.logger.warn(`Failed to save report to cache: ${message}`);
+    }
   }
 }
