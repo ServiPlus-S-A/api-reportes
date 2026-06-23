@@ -192,7 +192,7 @@ export class FinanzasAnalyticsService {
   }
 
   private esErrorDeMemoria(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = this.obtenerMensajeError(error);
     return (
       error instanceof RangeError ||
       /out of memory|heap|allocation failed|buffer too large/i.test(message)
@@ -200,7 +200,7 @@ export class FinanzasAnalyticsService {
   }
 
   private async getFromCache(key: string): Promise<ReporteData | null> {
-    if (!this.redisClient || this.redisClient.status !== "ready") return null;
+    if (this.redisClient?.status !== "ready") return null;
 
     try {
       const cachedData = await this.redisClient.get(key);
@@ -219,7 +219,7 @@ export class FinanzasAnalyticsService {
   }
 
   private async saveToCache(key: string, data: ReporteData): Promise<void> {
-    if (!this.redisClient || this.redisClient.status !== "ready") return;
+    if (this.redisClient?.status !== "ready") return;
 
     try {
       await this.redisClient.set(key, JSON.stringify(data), "EX", 3600);
@@ -229,6 +229,20 @@ export class FinanzasAnalyticsService {
           ? cacheWriteError.message
           : String(cacheWriteError);
       this.logger.warn(`Failed to save report to cache: ${message}`);
+    }
+  }
+
+  private obtenerMensajeError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === "string") {
+      return error;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown error";
     }
   }
 }

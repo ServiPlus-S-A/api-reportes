@@ -296,10 +296,7 @@ export class TrazabilidadController {
   async obtenerDistribucionClientesPorDepartamentoResumen(
     @Query() query: DistribucionClientesQueryDto,
   ) {
-    return this.trazabilidadService.obtenerReporteConsolidadoClientes(
-      query.tipo,
-      query.estado,
-    );
+    return this.obtenerReporteConsolidadoClientes(query);
   }
 
   @Get("clientes/:id")
@@ -329,5 +326,14 @@ export class TrazabilidadController {
   })
   async obtenerClientePorID(@Param("id") id: string) {
     return this.trazabilidadService.obtenerClientePorID(id);
+  }
+
+  private obtenerReporteConsolidadoClientes(
+    query: DistribucionClientesQueryDto,
+  ) {
+    return this.trazabilidadService.obtenerReporteConsolidadoClientes(
+      query.tipo,
+      query.estado,
+    );
   }
 }

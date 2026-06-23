@@ -343,16 +343,19 @@ export class ClientesAdapter {
     tipo?: string,
     estado?: string,
   ): boolean {
-    const matchTipo = !tipo
-      ? true
-      : cliente.tipo.toLowerCase() === tipo.toLowerCase() ||
-        (tipo.toLowerCase() === "persona" &&
-          cliente.tipo.toLowerCase() === "persona_natural") ||
-        (tipo.toLowerCase() === "empresa" &&
-          cliente.tipo.toLowerCase() === "empresarial");
-    const matchEstado = !estado
-      ? true
-      : cliente.estado.toLowerCase() === estado.toLowerCase();
+    const tipoNormalizado = tipo?.toLowerCase();
+    const tipoCliente = cliente.tipo.toLowerCase();
+    const matchTipo = tipoNormalizado
+      ? tipoCliente === tipoNormalizado ||
+        (tipoNormalizado === "persona" && tipoCliente === "persona_natural") ||
+        (tipoNormalizado === "empresa" && tipoCliente === "empresarial")
+      : true;
+
+    const estadoNormalizado = estado?.toLowerCase();
+    const matchEstado = estadoNormalizado
+      ? cliente.estado.toLowerCase() === estadoNormalizado
+      : true;
+
     return matchTipo && matchEstado;
   }
 

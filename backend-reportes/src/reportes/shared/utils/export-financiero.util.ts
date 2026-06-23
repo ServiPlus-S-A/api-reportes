@@ -1,5 +1,5 @@
-import { existsSync } from "fs";
-import { extname } from "path";
+import { existsSync } from "node:fs";
+import { extname } from "node:path";
 import PDFDocument from "pdfkit";
 import { Workbook } from "exceljs";
 import { FacturaFinanciera } from "../interfaces/factura-financiera.interface";

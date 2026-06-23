@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { Observable, of } from "rxjs";
 import { tap } from "rxjs/operators";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { RedisCacheService } from "./redis-cache.service";
 import { Reflector } from "@nestjs/core";
 import {

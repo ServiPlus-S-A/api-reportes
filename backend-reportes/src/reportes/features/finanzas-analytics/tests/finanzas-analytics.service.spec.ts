@@ -296,4 +296,20 @@ describe("FinanzasAnalyticsService", () => {
       );
     });
   });
+
+  describe("obtenerMensajeError", () => {
+    it("serializa errores no estandar sin usar Object.toString por defecto", () => {
+      expect((service as any).obtenerMensajeError("fallo")).toBe("fallo");
+      expect((service as any).obtenerMensajeError({ code: "OOM" })).toBe(
+        '{"code":"OOM"}',
+      );
+
+      const circular: any = { code: "CIRCULAR" };
+      circular.self = circular;
+
+      expect((service as any).obtenerMensajeError(circular)).toBe(
+        "Unknown error",
+      );
+    });
+  });
 });
