@@ -1,4 +1,11 @@
-import { Injectable, Logger, InternalServerErrorException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  PayloadTooLargeException,
+} from "@nestjs/common";
 import Redis from "ioredis";
 import { FinanzasAdapter } from "../../integraciones/finanzas/finanzas.adapter";
 import { FirebaseReporteRepository } from "../../shared/repositories/firebase-reporte.repository";
@@ -12,9 +19,20 @@ import {
 import { ResumenIngresosTipoServicioDto } from "../../shared/dto/ingresos-tipo-servicio-response.dto";
 import { JwtPayloadData } from "../../shared/interfaces/detalle-solicitud.interface";
 import { ResumenPorTipo } from "../../shared/interfaces/ingresos-servicio.interface";
+import { ExportarReporteFinancieroDto } from "../../shared/dto/exportar-reporte-financiero.dto";
+import { ArchivoFinanciero } from "../../shared/interfaces/factura-financiera.interface";
+import {
+  generarExcelFinanciero,
+  generarPdfFinanciero,
+} from "../../shared/utils/export-financiero.util";
 
 @Injectable()
 export class FinanzasAnalyticsService {
+  private static readonly UMBRAL_VOLUMEN_ALTO = 5000;
+  private static readonly MENSAJE_VOLUMEN_ALTO =
+    "La exportación de un volumen alto de datos puede tardar unos segundos, ¿desea continuar?";
+  private static readonly MENSAJE_MEMORIA =
+    "Error crítico: El archivo es demasiado grande para ser procesado, intente filtrar por un rango de fechas menor";
   private readonly logger = new Logger(FinanzasAnalyticsService.name);
   private redisClient: any = null;
 
@@ -27,7 +45,9 @@ export class FinanzasAnalyticsService {
     const redisPort = Number.parseInt(process.env.REDIS_PORT || "6379", 10);
 
     try {
-      this.redisClient = new Redis({
+      const redisModule = require("ioredis");
+      const RedisClient = redisModule.default ?? redisModule;
+      this.redisClient = new RedisClient({
         host: redisHost,
         port: redisPort,
         maxRetriesPerRequest: 1,
@@ -243,8 +263,94 @@ export class FinanzasAnalyticsService {
     return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   }
 
+  async exportarReporteFinanciero(
+    dto: ExportarReporteFinancieroDto,
+  ): Promise<ArchivoFinanciero> {
+    const fechaInicio = new Date(dto.fechaInicio);
+    const fechaFin = /^\d{4}-\d{2}-\d{2}$/.test(dto.fechaFin)
+      ? new Date(`${dto.fechaFin}T23:59:59.999Z`)
+      : new Date(dto.fechaFin);
+
+    if (fechaInicio > fechaFin) {
+      throw new BadRequestException(
+        "La fecha de inicio no puede ser posterior a la fecha fin",
+      );
+    }
+
+    let facturas;
+    try {
+      facturas = await this.finanzasAdapter.fetchFacturasParaExportar(
+        fechaInicio.toISOString(),
+        fechaFin.toISOString(),
+      );
+    } catch (error) {
+      if (this.esErrorDeMemoria(error)) {
+        throw new PayloadTooLargeException(
+          FinanzasAnalyticsService.MENSAJE_MEMORIA,
+        );
+      }
+      throw error;
+    }
+
+    if (facturas.length === 0) {
+      throw new BadRequestException("No hay datos disponibles para exportar");
+    }
+
+    if (
+      facturas.length > FinanzasAnalyticsService.UMBRAL_VOLUMEN_ALTO &&
+      !dto.confirmarVolumen
+    ) {
+      throw new ConflictException({
+        message: FinanzasAnalyticsService.MENSAJE_VOLUMEN_ALTO,
+        requiereConfirmacion: true,
+        totalRegistros: facturas.length,
+      });
+    }
+
+    const encabezado = {
+      fechaGeneracion: new Date(),
+      fechaInicio: dto.fechaInicio,
+      fechaFin: dto.fechaFin,
+      logoPath: process.env.SERVIPLUS_LOGO_PATH,
+    };
+
+    try {
+      const esExcel = dto.formato === "xlsx";
+      const buffer = esExcel
+        ? await generarExcelFinanciero(facturas, encabezado)
+        : await generarPdfFinanciero(facturas, encabezado);
+      const marcaTiempo = new Date().toISOString().slice(0, 10);
+
+      return {
+        buffer,
+        contentType: esExcel
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/pdf",
+        nombreArchivo: `reporte-financiero-${marcaTiempo}.${dto.formato}`,
+        totalRegistros: facturas.length,
+      };
+    } catch (error) {
+      if (this.esErrorDeMemoria(error)) {
+        throw new PayloadTooLargeException(
+          FinanzasAnalyticsService.MENSAJE_MEMORIA,
+        );
+      }
+      throw new InternalServerErrorException(
+        "No se pudo generar el archivo financiero",
+      );
+    }
+  }
+
+  private esErrorDeMemoria(error: unknown): boolean {
+    const message = this.obtenerMensajeError(error);
+    return (
+      error instanceof RangeError ||
+      /out of memory|heap|allocation failed|buffer too large/i.test(message)
+    );
+  }
+
   private async getFromCache(key: string): Promise<ReporteData | null> {
-    if (!this.redisClient || this.redisClient.status !== "ready") return null;
+    if (this.redisClient?.status !== "ready") return null;
 
     try {
       const cachedData = await this.redisClient.get(key);
@@ -263,7 +369,7 @@ export class FinanzasAnalyticsService {
   }
 
   private async saveToCache(key: string, data: ReporteData): Promise<void> {
-    if (!this.redisClient || this.redisClient.status !== "ready") return;
+    if (this.redisClient?.status !== "ready") return;
 
     try {
       await this.redisClient.set(key, JSON.stringify(data), "EX", 3600);
@@ -273,6 +379,20 @@ export class FinanzasAnalyticsService {
           ? cacheWriteError.message
           : String(cacheWriteError);
       this.logger.warn(`Failed to save report to cache: ${message}`);
+    }
+  }
+
+  private obtenerMensajeError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === "string") {
+      return error;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown error";
     }
   }
 }

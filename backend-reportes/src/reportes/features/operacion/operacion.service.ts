@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { SolicitudesAdapter } from "../../integraciones/solicitudes/solicitudes.adapter";
 import { TiempoPromedioDto } from "../../shared/dto/tiempo-promedio";
 import { PromedioData } from "../../shared/interfaces/promedioInterface";
@@ -10,12 +10,14 @@ export class OperacionService {
   async obtenerTiempoPromedioSolicitudes(
     dto: TiempoPromedioDto,
   ): Promise<PromedioData> {
-    const fechaInicio = dto.fechaInicio
-      ? new Date(dto.fechaInicio)
-      : new Date("2000-01-01T00:00:00.000Z");
-    const fechaFin = dto.fechaFin
-      ? new Date(dto.fechaFin)
-      : new Date("2100-01-01T00:00:00.000Z");
+    const fechaInicio = this.normalizarFechaInicio(dto.fechaInicio);
+    const fechaFin = this.normalizarFechaFin(dto.fechaFin);
+
+    if (fechaInicio > fechaFin) {
+      throw new BadRequestException(
+        "La fecha de inicio no puede ser posterior a la fecha fin",
+      );
+    }
 
     const solicitudes =
       await this.solicitudesAdapter.fetchSolicitudesParaPromedio();
@@ -24,14 +26,22 @@ export class OperacionService {
       const fechaCreacion = new Date(solicitud.fechaCreacion);
       const coincideTipo =
         !dto.tipoServicio ||
-        solicitud.tipoServicio.toLowerCase() === dto.tipoServicio.toLowerCase();
+        solicitud.tipoServicio?.toLowerCase() ===
+          dto.tipoServicio.toLowerCase();
       const coincideRango =
         fechaCreacion >= fechaInicio && fechaCreacion <= fechaFin;
-      const esCompletada =
-        solicitud.estado === "Completada" && solicitud.fechaCompletada !== null;
 
-      return coincideTipo && coincideRango && esCompletada;
+      return (
+        coincideTipo &&
+        coincideRango &&
+        this.esSolicitudCompletadaValida(solicitud)
+      );
     });
+
+    const historicoUltimos6Meses = this.generarHistorico(
+      solicitudes,
+      dto.tipoServicio,
+    );
 
     if (solicitudesFiltradas.length === 0) {
       return {
@@ -40,7 +50,7 @@ export class OperacionService {
         promedioTexto: "0.0",
         solicitudesProcesadas: 0,
         mensaje: "Sin datos de cierre para el periodo consultado",
-        historicoUltimos6Meses: [],
+        historicoUltimos6Meses,
       };
     }
 
@@ -49,37 +59,42 @@ export class OperacionService {
       const fin = new Date(solicitud.fechaCompletada).getTime();
       return (fin - inicio) / (1000 * 60 * 60);
     });
-
     const promedioHoras =
       duracionesHoras.reduce((acc, value) => acc + value, 0) /
       duracionesHoras.length;
-    const promedioDias = promedioHoras / 24;
-    const dias = Math.floor(promedioDias);
-    const horas = Math.round(promedioHoras % 24);
-    const promedioTexto = `${dias} ${dias === 1 ? "día" : "días"}, ${horas} ${
-      horas === 1 ? "hora" : "horas"
-    }`;
+    const horasRedondeadas = Math.round(promedioHoras);
+    const dias = Math.floor(horasRedondeadas / 24);
+    const horas = horasRedondeadas % 24;
 
     return {
       promedio: Number(promedioHoras.toFixed(2)),
       unidad: "horas",
-      promedioTexto,
+      promedioTexto: `${dias} ${dias === 1 ? "día" : "días"}, ${horas} ${
+        horas === 1 ? "hora" : "horas"
+      }`,
       solicitudesProcesadas: solicitudesFiltradas.length,
-      historicoUltimos6Meses: await this.generarHistorico(6),
+      historicoUltimos6Meses,
     };
   }
 
-  private async generarHistorico(cantidadMeses: number) {
+  private generarHistorico(solicitudes: any[], tipoServicio?: string) {
     const resultado = [];
     const ahora = new Date();
 
-    for (let i = cantidadMeses - 1; i >= 0; i--) {
-      const fecha = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1);
+    for (let i = 5; i >= 0; i--) {
+      const fecha = new Date(
+        Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth() - i, 1),
+      );
       const mes = fecha.toLocaleString("es-ES", {
         month: "short",
         year: "numeric",
+        timeZone: "UTC",
       });
-      const promedioMes = await this.calcularPromedioMes(fecha);
+      const promedioMes = this.calcularPromedioMes(
+        fecha,
+        solicitudes,
+        tipoServicio,
+      );
       resultado.push({
         mes,
         promedioHoras: Number(promedioMes.toFixed(2)),
@@ -89,39 +104,62 @@ export class OperacionService {
     return resultado;
   }
 
-  private async calcularPromedioMes(fecha: Date) {
-    const inicioMes = new Date(fecha.getFullYear(), fecha.getMonth(), 1);
-    const finMes = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
-
-    const solicitudes =
-      await this.solicitudesAdapter.fetchSolicitudesParaPromedio();
+  private calcularPromedioMes(
+    fecha: Date,
+    solicitudes: any[],
+    tipoServicio?: string,
+  ): number {
+    const inicioMes = new Date(
+      Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), 1),
+    );
+    const finMes = new Date(
+      Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth() + 1, 1) - 1,
+    );
 
     const solicitudesMes = solicitudes.filter((solicitud) => {
-      if (solicitud.estado !== "Completada" || !solicitud.fechaCompletada) {
-        return false;
-      }
+      if (!this.esSolicitudCompletadaValida(solicitud)) return false;
 
-      const fechaCreacion = new Date(solicitud.fechaCreacion);
       const fechaCompletada = new Date(solicitud.fechaCompletada);
+      const coincideTipo =
+        !tipoServicio ||
+        solicitud.tipoServicio?.toLowerCase() === tipoServicio.toLowerCase();
 
       return (
-        fechaCreacion >= inicioMes &&
-        fechaCreacion <= finMes &&
+        coincideTipo &&
         fechaCompletada >= inicioMes &&
         fechaCompletada <= finMes
       );
     });
 
-    if (solicitudesMes.length === 0) {
-      return 0;
-    }
+    if (solicitudesMes.length === 0) return 0;
 
     const horas = solicitudesMes.map((solicitud) => {
       const inicio = new Date(solicitud.fechaCreacion).getTime();
       const fin = new Date(solicitud.fechaCompletada).getTime();
       return (fin - inicio) / (1000 * 60 * 60);
     });
-
     return horas.reduce((acc, value) => acc + value, 0) / horas.length;
+  }
+
+  private esSolicitudCompletadaValida(solicitud: any): boolean {
+    if (solicitud.estado?.trim().toLowerCase() !== "completada") return false;
+    if (!solicitud.fechaCreacion || !solicitud.fechaCompletada) return false;
+
+    const inicio = new Date(solicitud.fechaCreacion).getTime();
+    const fin = new Date(solicitud.fechaCompletada).getTime();
+    return Number.isFinite(inicio) && Number.isFinite(fin) && fin >= inicio;
+  }
+
+  private normalizarFechaInicio(value?: string): Date {
+    return value
+      ? new Date(value)
+      : new Date("2000-01-01T00:00:00.000Z");
+  }
+
+  private normalizarFechaFin(value?: string): Date {
+    if (!value) return new Date();
+    return /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? new Date(`${value}T23:59:59.999Z`)
+      : new Date(value);
   }
 }

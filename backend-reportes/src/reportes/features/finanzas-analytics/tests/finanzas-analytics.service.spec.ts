@@ -4,6 +4,10 @@ import { FinanzasAdapter } from "../../../integraciones/finanzas/finanzas.adapte
 import { FirebaseReporteRepository } from "../../../shared/repositories/firebase-reporte.repository";
 import { ComercialAdapter } from "../../../integraciones/comercial/comercial.adapter";
 import Redis from "ioredis";
+import {
+  generarExcelFinanciero,
+  generarPdfFinanciero,
+} from "../../../shared/utils/export-financiero.util";
 
 // Mock ioredis before any import resolves it
 jest.mock("ioredis", () => {
@@ -16,6 +20,11 @@ jest.mock("ioredis", () => {
   };
   return { default: jest.fn(() => mockRedis), __esModule: true };
 });
+
+jest.mock("../../../shared/utils/export-financiero.util", () => ({
+  generarExcelFinanciero: jest.fn(),
+  generarPdfFinanciero: jest.fn(),
+}));
 
 describe("FinanzasAnalyticsService", () => {
   let service: FinanzasAnalyticsService;
@@ -31,7 +40,10 @@ describe("FinanzasAnalyticsService", () => {
         FinanzasAnalyticsService,
         {
           provide: FinanzasAdapter,
-          useValue: { fetchIngresosPorPeriodo: jest.fn() },
+          useValue: {
+            fetchIngresosPorPeriodo: jest.fn(),
+            fetchFacturasParaExportar: jest.fn(),
+          },
         },
         {
           provide: FirebaseReporteRepository,
@@ -52,6 +64,10 @@ describe("FinanzasAnalyticsService", () => {
     repository = module.get(FirebaseReporteRepository);
     comercialAdapter = module.get(ComercialAdapter);
     mockRedisClient = (service as any).redisClient;
+    (generarExcelFinanciero as jest.Mock).mockResolvedValue(
+      Buffer.from("xlsx"),
+    );
+    (generarPdfFinanciero as jest.Mock).mockResolvedValue(Buffer.from("pdf"));
   });
 
   it("should be defined", () => {
@@ -359,6 +375,103 @@ describe("FinanzasAnalyticsService", () => {
       await expect(
         service.obtenerIngresosPorTipoServicio(dto, userPayload, ipAddress),
       ).rejects.toThrow("Error de integración: No se pudo obtener la información financiera en este momento");
+    });
+  });
+
+  describe("exportarReporteFinanciero", () => {
+    const factura = {
+      idFactura: "FAC-1",
+      nombreCliente: "Cliente Uno",
+      tipoServicio: "Consultoría",
+      valorServicio: 100,
+      impuestosAplicados: 19,
+      totalNeto: 119,
+      fecha: "2026-01-10T00:00:00.000Z",
+    };
+
+    it("bloquea la descarga cuando no existen datos", async () => {
+      adapter.fetchFacturasParaExportar.mockResolvedValue([]);
+
+      await expect(
+        service.exportarReporteFinanciero({
+          formato: "xlsx" as any,
+          fechaInicio: "2026-01-01",
+          fechaFin: "2026-01-31",
+        }),
+      ).rejects.toThrow("No hay datos disponibles para exportar");
+    });
+
+    it("solicita confirmación cuando hay más de 5.000 registros", async () => {
+      adapter.fetchFacturasParaExportar.mockResolvedValue(
+        Array.from({ length: 5001 }, (_, index) => ({
+          ...factura,
+          idFactura: `FAC-${index}`,
+        })),
+      );
+
+      await expect(
+        service.exportarReporteFinanciero({
+          formato: "pdf" as any,
+          fechaInicio: "2026-01-01",
+          fechaFin: "2026-01-31",
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          message:
+            "La exportación de un volumen alto de datos puede tardar unos segundos, ¿desea continuar?",
+          requiereConfirmacion: true,
+          totalRegistros: 5001,
+        }),
+      });
+      expect(generarPdfFinanciero).not.toHaveBeenCalled();
+    });
+
+    it("genera Excel después de validar datos y rango", async () => {
+      adapter.fetchFacturasParaExportar.mockResolvedValue([factura]);
+
+      const archivo = await service.exportarReporteFinanciero({
+        formato: "xlsx" as any,
+        fechaInicio: "2026-01-01",
+        fechaFin: "2026-01-31",
+      });
+
+      expect(archivo.contentType).toContain("spreadsheetml");
+      expect(archivo.nombreArchivo).toMatch(/\.xlsx$/);
+      expect(archivo.totalRegistros).toBe(1);
+      expect(generarExcelFinanciero).toHaveBeenCalled();
+    });
+
+    it("retorna el mensaje crítico ante falta de memoria", async () => {
+      adapter.fetchFacturasParaExportar.mockResolvedValue([factura]);
+      (generarPdfFinanciero as jest.Mock).mockRejectedValueOnce(
+        new RangeError("Array buffer allocation failed"),
+      );
+
+      await expect(
+        service.exportarReporteFinanciero({
+          formato: "pdf" as any,
+          fechaInicio: "2026-01-01",
+          fechaFin: "2026-01-31",
+        }),
+      ).rejects.toThrow(
+        "Error crítico: El archivo es demasiado grande para ser procesado, intente filtrar por un rango de fechas menor",
+      );
+    });
+  });
+
+  describe("obtenerMensajeError", () => {
+    it("serializa errores no estandar sin usar Object.toString por defecto", () => {
+      expect((service as any).obtenerMensajeError("fallo")).toBe("fallo");
+      expect((service as any).obtenerMensajeError({ code: "OOM" })).toBe(
+        '{"code":"OOM"}',
+      );
+
+      const circular: any = { code: "CIRCULAR" };
+      circular.self = circular;
+
+      expect((service as any).obtenerMensajeError(circular)).toBe(
+        "Unknown error",
+      );
     });
   });
 });

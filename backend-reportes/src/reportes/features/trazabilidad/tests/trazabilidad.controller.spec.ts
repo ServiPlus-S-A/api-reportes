@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { TrazabilidadController } from "../trazabilidad.controller";
 import { TrazabilidadService } from "../trazabilidad.service";
 import { JwtAuthGuard } from "../../../shared/auth/jwt-auth.guard";
+import { RedisCacheInterceptor } from "../../../shared/cache/redis-cache.interceptor";
 
 describe("TrazabilidadController", () => {
   let controller: TrazabilidadController;
@@ -17,12 +18,18 @@ describe("TrazabilidadController", () => {
             obtenerDetalleSolicitudCompletada: jest.fn(),
             exportarAtenciones: jest.fn(),
             obtenerAtencionesAnidadas: jest.fn(),
+            obtenerSolicitudesEnEjecucion: jest.fn(),
+            obtenerClientes: jest.fn(),
+            obtenerClientePorID: jest.fn(),
+            obtenerReporteConsolidadoClientes: jest.fn(),
           },
         },
       ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
+      .overrideInterceptor(RedisCacheInterceptor)
+      .useValue({ intercept: (context: any, next: any) => next.handle() })
       .compile();
 
     controller = module.get<TrazabilidadController>(TrazabilidadController);
@@ -155,6 +162,99 @@ describe("TrazabilidadController", () => {
         "0.0.0.0",
         2,
         20,
+      );
+    });
+
+    it("Llama al servicio para obtener solicitudes en ejecución", async () => {
+      service.obtenerSolicitudesEnEjecucion.mockResolvedValue({
+        solicitudes: [],
+        total: 0,
+        capacidadOperativa: 5,
+      } as any);
+
+      const res = await controller.obtenerSolicitudesEnEjecucion(
+        {} as any,
+        {} as any,
+        { ip: "127.0.0.1" } as any,
+      );
+      expect(res).toBeDefined();
+      expect(service.obtenerSolicitudesEnEjecucion).toHaveBeenCalledWith(
+        {},
+        {},
+        "127.0.0.1",
+      );
+    });
+
+    it("resuelve la ip fallback en obtenerSolicitudesEnEjecucion", async () => {
+      service.obtenerSolicitudesEnEjecucion.mockResolvedValue({
+        solicitudes: [],
+        total: 0,
+        capacidadOperativa: 5,
+      } as any);
+
+      const res = await controller.obtenerSolicitudesEnEjecucion(
+        {} as any,
+        {} as any,
+        { socket: {} } as any,
+      );
+      expect(res).toBeDefined();
+      expect(service.obtenerSolicitudesEnEjecucion).toHaveBeenCalledWith(
+        {},
+        {},
+        "0.0.0.0",
+      );
+    });
+
+    it("llama al servicio para obtener clientes con filtro opcional de departamento", async () => {
+      service.obtenerClientes.mockResolvedValue([{ id: "cli-1" }] as any);
+
+      const res = await controller.obtenerClientes("Antioquia");
+
+      expect(res).toEqual([{ id: "cli-1" }]);
+      expect(service.obtenerClientes).toHaveBeenCalledWith("Antioquia");
+    });
+
+    it("llama al servicio para obtener un cliente por id", async () => {
+      service.obtenerClientePorID.mockResolvedValue({ id: "cli-1" } as any);
+
+      const res = await controller.obtenerClientePorID("cli-1");
+
+      expect(res).toEqual({ id: "cli-1" });
+      expect(service.obtenerClientePorID).toHaveBeenCalledWith("cli-1");
+    });
+
+    it("llama al servicio para distribución consolidada de clientes", async () => {
+      service.obtenerReporteConsolidadoClientes.mockResolvedValue({
+        tabla: [],
+      } as any);
+
+      const res = await controller.obtenerDistribucionClientes({
+        tipo: "empresarial",
+        estado: "activo",
+      } as any);
+
+      expect(res).toEqual({ tabla: [] });
+      expect(service.obtenerReporteConsolidadoClientes).toHaveBeenCalledWith(
+        "empresarial",
+        "activo",
+      );
+    });
+
+    it("mantiene compatibilidad con distribución por departamento", async () => {
+      service.obtenerReporteConsolidadoClientes.mockResolvedValue({
+        grafico: [],
+      } as any);
+
+      const res =
+        await controller.obtenerDistribucionClientesPorDepartamentoResumen({
+          tipo: "persona_natural",
+          estado: "inactivo",
+        } as any);
+
+      expect(res).toEqual({ grafico: [] });
+      expect(service.obtenerReporteConsolidadoClientes).toHaveBeenCalledWith(
+        "persona_natural",
+        "inactivo",
       );
     });
   });

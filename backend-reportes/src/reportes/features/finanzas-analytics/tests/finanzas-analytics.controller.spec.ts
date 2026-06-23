@@ -18,6 +18,7 @@ describe("FinanzasAnalyticsController", () => {
           useValue: {
             generarReporte: jest.fn(),
             obtenerIngresosPorTipoServicio: jest.fn(),
+            exportarReporteFinanciero: jest.fn(),
           },
         },
       ],
@@ -112,6 +113,34 @@ describe("FinanzasAnalyticsController", () => {
       await expect(
         controller.obtenerIngresosPorTipoServicio(query, user, req as any),
       ).rejects.toThrow("Database error");
+    });
+  });
+
+  describe("exportarReporteFinanciero", () => {
+    it("envía el archivo con headers de descarga", async () => {
+      const buffer = Buffer.from("archivo");
+      service.exportarReporteFinanciero.mockResolvedValue({
+        buffer,
+        contentType: "application/pdf",
+        nombreArchivo: "reporte.pdf",
+        totalRegistros: 2,
+      });
+      const response = { set: jest.fn(), send: jest.fn() } as any;
+      const dto = {
+        formato: "pdf",
+        fechaInicio: "2026-01-01",
+        fechaFin: "2026-01-31",
+      } as any;
+
+      await controller.exportarReporteFinanciero(dto, response);
+
+      expect(response.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "Content-Type": "application/pdf",
+          "X-Total-Registros": "2",
+        }),
+      );
+      expect(response.send).toHaveBeenCalledWith(buffer);
     });
   });
 });

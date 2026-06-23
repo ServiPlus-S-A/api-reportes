@@ -45,7 +45,10 @@ describe("TrazabilidadService", () => {
         TrazabilidadService,
         {
           provide: SolicitudesAdapter,
-          useValue: { obtenerSolicitudPorId: jest.fn() },
+          useValue: {
+            obtenerSolicitudPorId: jest.fn(),
+            obtenerSolicitudesEnEjecucion: jest.fn(),
+          },
         },
         {
           provide: ClientesAdapter,
@@ -146,7 +149,7 @@ describe("TrazabilidadService", () => {
       );
       clientesAdapter.obtenerClientePorId.mockResolvedValue({
         nombre: "Cliente Test",
-      });
+      } as any);
       serviciosAdapter.obtenerServicioPorId.mockResolvedValue({
         nombre: "Servicio Test",
         tipo: "Consultoria",
@@ -197,7 +200,7 @@ describe("TrazabilidadService", () => {
       );
       clientesAdapter.obtenerClientePorId.mockResolvedValue({
         nombre: "Cliente Test",
-      });
+      } as any);
       serviciosAdapter.obtenerServicioPorId.mockRejectedValue(
         new Error("SERVICE_CATALOG_UNAVAILABLE"),
       );
@@ -226,7 +229,7 @@ describe("TrazabilidadService", () => {
       );
       clientesAdapter.obtenerClientePorId.mockResolvedValue({
         nombre: "Cliente",
-      });
+      } as any);
       serviciosAdapter.obtenerServicioPorId.mockResolvedValue({
         nombre: "Srv",
         tipo: "X",
@@ -445,6 +448,211 @@ describe("TrazabilidadService", () => {
       await expect(
         service.exportarAtenciones("REQ-3", "pdf", USER_WITH_ACCESS, "0.0.0.0"),
       ).rejects.toThrow("Error al recuperar las atenciones para exportar");
+    });
+  });
+
+  // ─── obtenerSolicitudesEnEjecucion ──────────────────────────────────────────
+
+  describe("obtenerSolicitudesEnEjecucion", () => {
+    it("debe retornar correctamente las solicitudes y guardar log", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "1",
+          estado: "En Proceso",
+          clienteNombre: "C1",
+          servicioNombre: "S1",
+          prioridad: "Alta",
+          tecnicoId: "T1",
+          tecnicoNombre: "N1",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 50,
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        {},
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes).toHaveLength(1);
+      expect(res.total).toBe(1);
+      expect(repository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "VIEW_SOLICITUDES_EJECUCION" }),
+      );
+    });
+
+    it("debe filtrar por tecnicoId", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "1",
+          estado: "En Proceso",
+          prioridad: "Alta",
+          tecnicoId: "T1",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 50,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+        {
+          id: "2",
+          estado: "En Ejecución",
+          prioridad: "Baja",
+          tecnicoId: "T2",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 10,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        { tecnicoId: "T2" },
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes).toHaveLength(1);
+      expect(res.solicitudes[0].id).toBe("2");
+    });
+
+    it("debe ordenar por prioridad", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "1",
+          estado: "En Proceso",
+          prioridad: "Baja",
+          tecnicoId: "T1",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 50,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+        {
+          id: "2",
+          estado: "En Ejecución",
+          prioridad: "Alta",
+          tecnicoId: "T2",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 10,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+        {
+          id: "3",
+          estado: "En Ejecución",
+          prioridad: "Desconocida" as any,
+          tecnicoId: "T2",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 10,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        { ordenarPor: "prioridad" },
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes[0].id).toBe("2"); // Alta
+      expect(res.solicitudes[1].id).toBe("1"); // Baja
+      expect(res.solicitudes[2].id).toBe("3"); // Desconocida (4)
+    });
+
+    it("debe ordenar por fechaInicio", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "1",
+          estado: "En Proceso",
+          prioridad: "Baja",
+          tecnicoId: "T1",
+          fechaInicioEjecucion: "2024-05-01T10:00:00Z",
+          porcentajeAvance: 50,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+        {
+          id: "2",
+          estado: "En Ejecución",
+          prioridad: "Alta",
+          tecnicoId: "T2",
+          fechaInicioEjecucion: "2024-05-10T10:00:00Z",
+          porcentajeAvance: 10,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        { ordenarPor: "fechaInicio" },
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      // Descending usually (newest first). Our logic: b - a
+      expect(res.solicitudes[0].id).toBe("2");
+      expect(res.solicitudes[1].id).toBe("1");
+    });
+
+    it("debe usar fallback N/A cuando clienteNombre, servicioNombre y tecnicoNombre son null", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "X",
+          estado: "En Proceso",
+          prioridad: "Media",
+          tecnicoId: "T1",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 0,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        {},
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes[0].cliente).toBe("N/A");
+      expect(res.solicitudes[0].servicio).toBe("N/A");
+      expect(res.solicitudes[0].tecnicoAsignado).toBe("N/A");
+    });
+
+    it("debe usar los valores reales cuando clienteNombre y tecnicoNombre no son null", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "Y",
+          estado: "En Ejecución",
+          prioridad: "Alta",
+          tecnicoId: "T3",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 75,
+          clienteNombre: "Empresa XYZ",
+          servicioNombre: "Servicio ABC",
+          tecnicoNombre: "Carlos López",
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        {},
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes[0].cliente).toBe("Empresa XYZ");
+      expect(res.solicitudes[0].servicio).toBe("Servicio ABC");
+      expect(res.solicitudes[0].tecnicoAsignado).toBe("Carlos López");
     });
   });
 });

@@ -10,8 +10,9 @@ import {
   UseGuards,
   Req,
   BadRequestException,
+  Res,
 } from "@nestjs/common";
-import { Request } from "express";
+import { Request, Response } from "express";
 import {
   ApiTags,
   ApiOperation,
@@ -21,6 +22,8 @@ import {
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
   ApiInternalServerErrorResponse,
+  ApiConflictResponse,
+  ApiPayloadTooLargeResponse,
 } from "@nestjs/swagger";
 import { FinanzasAnalyticsService } from "./finanzas-analytics.service";
 import { GenerarReporteDto } from "../../shared/dto/generar-reporte.dto";
@@ -32,6 +35,7 @@ import { RolesGuard } from "../../shared/auth/roles.guard";
 import { IngresosTipoServicioQueryDto } from "../../shared/dto/ingresos-tipo-servicio-query.dto";
 import { ResumenIngresosTipoServicioDto } from "../../shared/dto/ingresos-tipo-servicio-response.dto";
 import { JwtPayloadData } from "../../shared/interfaces/detalle-solicitud.interface";
+import { ExportarReporteFinancieroDto } from "../../shared/dto/exportar-reporte-financiero.dto";
 
 @ApiTags("Reportes - Finanzas y Analytics")
 @Controller("reportes/finanzas")
@@ -124,5 +128,36 @@ export class FinanzasAnalyticsController {
       user,
       ip,
     );
+  }
+
+  @Post("exportar")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("coordinador_administrativo", "gerente_financiero")
+  @ApiBearerAuth("jwt")
+  @ApiOperation({ summary: "Exportar reporte financiero en Excel o PDF" })
+  @ApiForbiddenResponse({
+    description: "Rol no autorizado para exportar reportes financieros.",
+  })
+  @ApiConflictResponse({
+    description: "La exportación supera 5.000 registros y requiere confirmación.",
+  })
+  @ApiPayloadTooLargeResponse({
+    description: "El archivo no puede procesarse por falta de memoria.",
+  })
+  async exportarReporteFinanciero(
+    @Body() dto: ExportarReporteFinancieroDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    const archivo =
+      await this.finanzasAnalyticsService.exportarReporteFinanciero(dto);
+
+    response.set({
+      "Content-Type": archivo.contentType,
+      "Content-Disposition": `attachment; filename="${archivo.nombreArchivo}"`,
+      "Content-Length": archivo.buffer.length.toString(),
+      "X-Total-Registros": archivo.totalRegistros.toString(),
+    });
+    response.send(archivo.buffer);
   }
 }

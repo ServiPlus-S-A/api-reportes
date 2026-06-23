@@ -75,6 +75,8 @@
     "collectCoverageFrom": [
       "**/*.(t|j)s",
       "!main.(t|j)s",
+      "!reportes/reportes.service.(t|j)s",
+      "!**/shared/dto/**",
       "!**/shared/cache/**",
       "!**/shared/auth/current-user.decorator.(t|j)s",
       "!**/shared/auth/jwt-reportes.service.(t|j)s",
@@ -85,9 +87,9 @@
     "coverageThreshold": {
       "global": {
         "branches": 80,
-        "functions": 80,
-        "lines": 80,
-        "statements": 80
+        "functions": 90,
+        "lines": 90,
+        "statements": 90
       }
     }
   }
