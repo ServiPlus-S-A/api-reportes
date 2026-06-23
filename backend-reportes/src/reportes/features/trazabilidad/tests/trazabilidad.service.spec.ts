@@ -602,5 +602,57 @@ describe("TrazabilidadService", () => {
       expect(res.solicitudes[0].id).toBe("2");
       expect(res.solicitudes[1].id).toBe("1");
     });
+
+    it("debe usar fallback N/A cuando clienteNombre, servicioNombre y tecnicoNombre son null", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "X",
+          estado: "En Proceso",
+          prioridad: "Media",
+          tecnicoId: "T1",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 0,
+          clienteNombre: null,
+          servicioNombre: null,
+          tecnicoNombre: null,
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        {},
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes[0].cliente).toBe("N/A");
+      expect(res.solicitudes[0].servicio).toBe("N/A");
+      expect(res.solicitudes[0].tecnicoAsignado).toBe("N/A");
+    });
+
+    it("debe usar los valores reales cuando clienteNombre y tecnicoNombre no son null", async () => {
+      solicitudesAdapter.obtenerSolicitudesEnEjecucion.mockResolvedValue([
+        {
+          id: "Y",
+          estado: "En Ejecución",
+          prioridad: "Alta",
+          tecnicoId: "T3",
+          fechaInicioEjecucion: new Date().toISOString(),
+          porcentajeAvance: 75,
+          clienteNombre: "Empresa XYZ",
+          servicioNombre: "Servicio ABC",
+          tecnicoNombre: "Carlos López",
+        },
+      ]);
+
+      const res = await service.obtenerSolicitudesEnEjecucion(
+        {},
+        USER_WITH_ACCESS,
+        "127.0.0.1",
+      );
+
+      expect(res.solicitudes[0].cliente).toBe("Empresa XYZ");
+      expect(res.solicitudes[0].servicio).toBe("Servicio ABC");
+      expect(res.solicitudes[0].tecnicoAsignado).toBe("Carlos López");
+    });
   });
 });
