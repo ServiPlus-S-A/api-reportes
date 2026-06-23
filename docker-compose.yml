@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7.2.5-alpine
@@ -10,23 +8,7 @@ services:
       timeout: 5s
       retries: 3
     ports:
-      - "6379:6379"
-    networks:
-      - serviplus_net
-
-  api-gateway:
-    build:
-      context: ./api-gateway
-    container_name: api_gateway
-    ports:
-      - "${GATEWAY_PORT}:${GATEWAY_PORT}"
-    environment:
-      - PORT=${GATEWAY_PORT}
-      - BACKEND_URL=http://backend-reportes:${BACKEND_PORT}
-      - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      backend-reportes:
-        condition: service_healthy
+      - "${REDIS_PORT}:6379"
     networks:
       - serviplus_net
 
@@ -34,21 +16,29 @@ services:
     build:
       context: ./backend-reportes
     container_name: backend_reportes
+    env_file:
+      - .env
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"
     environment:
+      - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT}
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=${REDIS_PORT}
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
+      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:${BACKEND_PORT}/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${BACKEND_PORT}/health"]
       interval: 15s
       timeout: 5s
       retries: 3
+    volumes:
+      - ./backend-reportes/src:/app/src
     networks:
       - serviplus_net
 
@@ -56,13 +46,15 @@ services:
     build:
       context: ./frontend
     container_name: frontend_app
+    env_file:
+      - .env
     ports:
-      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+      - "${FRONTEND_PORT}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:${GATEWAY_PORT}
-    depends_on:
-      api-gateway:
-        condition: service_started
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
     networks:
       - serviplus_net
 

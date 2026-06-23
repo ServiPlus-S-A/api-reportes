@@ -1,0 +1,159 @@
+name: CI – ServiPlus
+
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Detectar cambios por carpeta
+        uses: dorny/paths-filter@v3
+
+        id: filter
+
+        with:
+          base: ${{ github.event.pull_request.base.ref || 'develop' }}
+          filters: |
+            backend:
+              - 'backend-reportes/**'
+              - '.github/workflows/ci.yml'
+
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+
+  ci-backend:
+    needs: changes
+
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    defaults:
+      run:
+        working-directory: backend-reportes
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: backend-reportes/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('backend-reportes/package-lock.json') }}
+
+      - name: Instalar dependencias
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Verificaciones estáticas paralelas (Lint, Format, Tsc)
+        run: |
+          npx eslint "{src,apps,libs,test}/**/*.ts" --fix &
+          npx prettier --check "src/**/*.ts" "test/**/*.ts" &
+          npx tsc --noEmit &
+          wait
+
+      - name: Build (Nest)
+        run: npm run build
+
+      - name: Tests unitarios (Jest)
+        run: npm run test -- --forceExit
+
+        env:
+          CI: true
+
+      - name: Tests e2e (Jest)
+        run: npm run test:e2e -- --forceExit
+
+        env:
+          CI: true
+
+      - name: Análisis estático y cobertura (SonarCloud)
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: backend-reportes
+
+      - name: Docker build
+        run: docker build -t backend-reportes:ci .
+
+#   ci-frontend:
+#
+#     needs: changes
+#
+#     if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+#
+#     runs-on: ubuntu-latest
+#
+#     defaults:
+#       run:
+#         working-directory: frontend
+#
+#     steps:
+#       - name: Checkout código
+#         uses: actions/checkout@v4
+#
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#
+#         with:
+#           node-version: "20"
+#           cache: npm
+#           cache-dependency-path: frontend/package-lock.json
+#
+#       - name: Instalar dependencias
+#         run: npm ci
+#
+#       - name: Lint (Next.js / ESLint)
+#         run: npm run lint
+#
+#       - name: Tipos (tsc)
+#         run: npx tsc --noEmit
+#
+#       - name: Next.js build
+#         run: npm run build
+#
+#         env:
+#           CI: true
+#
+#       - name: Instalar navegadores Playwright
+#         run: npx playwright install --with-deps chromium
+#
+#       - name: Tests e2e (Playwright)
+#         run: npm run test:e2e
+#
+#         env:
+#           CI: true
+#
+#       - name: Docker build
+#         run: docker build -t frontend:ci .
