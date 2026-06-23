@@ -1,6 +1,6 @@
 # ServiPlus - Reportes Operativos
 
-Modulo de reportes operativos para la plataforma **ServiPlus S.A.**: generacion de reportes financieros, cache distribuido, auditoria en Firebase/Firestore y UI analitica. Implementado con arquitectura de microservicios segun el Documento de Arquitectura de Software (DAS) e ISO/IEC 25010.
+Módulo de reportes operativos para la plataforma **ServiPlus S.A.**: generación de reportes financieros, caché distribuido, auditoría en Firebase/Firestore y UI analítica. Implementado con arquitectura de microservicios según el Documento de Arquitectura de Software (DAS) e ISO/IEC 25010.
 
 [![License](https://img.shields.io/badge/license-UNLICENSED-lightgrey.svg)]()
 [![Status](https://img.shields.io/badge/status-en%20desarrollo-blue.svg)]()
@@ -12,13 +12,13 @@ Modulo de reportes operativos para la plataforma **ServiPlus S.A.**: generacion 
 
 ## Descripcion
 
-ServiPlus Reportes permite a equipos operativos y analistas **generar reportes por periodo** (formato `YYYY-MM`), consolidar ingresos y egresos, consultar detalle tabular y dejar trazabilidad de auditoria. El backend aplica el patron **Cache-Aside** con Redis y persiste eventos en **Firebase/Firestore**.
+ServiPlus Reportes permite a equipos operativos y analistas **generar reportes por periodo** (formato `YYYY-MM`), consolidar ingresos y egresos, consultar detalle tabular y dejar trazabilidad de auditoria. El backend aplica el patrón **Cache-Aside** con Redis y persiste eventos en **Firebase/Firestore**.
 
-**Roles simulados en la UI (RBAC de demostracion):**
+**Roles simulados en la UI (RBAC de demostración):**
 
-- **Administrador:** flujo completo de generacion de reportes.
+- **Administrador:** flujo completo de generación de reportes.
 - **Analista:** acceso permitido en el escenario de demo.
-- **Usuario comun:** escenario de restriccion (mensajes 401/403 segun integracion externa de autenticacion).
+- **Usuario común:** escenario de restricción (mensajes 401/403 según integración externa de autenticación).
 
 ## Arquitectura
 
@@ -39,7 +39,7 @@ Backend Reportes (NestJS)
 
 - Cache-Aside (Redis) para respuestas de reportes por `tipo` + `periodo`.
 - Adaptador de fuente de datos (`FinanzasAdapter`) desacoplado del dominio.
-- Validacion global de DTOs (`class-validator`).
+- Validación global de DTOs (`class-validator`).
 - Health check: `GET /health`.
 
 ## Stack tecnologico
@@ -63,7 +63,7 @@ Backend Reportes (NestJS)
 | Framework | Next.js 14 (App Router) |
 | UI | React 18 + Tailwind CSS 3 |
 | HTTP | Axios |
-| Validacion cliente | Zod |
+| Validación cliente | Zod |
 | Tests e2e | Playwright |
 
 ### Infraestructura
@@ -74,7 +74,7 @@ Backend Reportes (NestJS)
 | Cache | Redis 7.2 (Alpine) |
 | CI | GitHub Actions (`ci.yml` en PR a `develop`) |
 | CD | GitHub Actions (`cd.yml` en PR a `main` + Docker Hub + deploy SSH) |
-| Produccion | `docker-compose.prod.yml` + imagenes en Docker Hub |
+| Producción | `docker-compose.prod.yml` + imágenes en Docker Hub |
 
 ## Requisitos previos
 
@@ -83,7 +83,7 @@ Backend Reportes (NestJS)
 - Node.js 20 o superior (desarrollo local sin Docker).
 - VS Code (recomendado).
 
-## Inicio rapido
+## Inicio rápido
 
 ### 1. Clonar el repositorio
 
@@ -94,7 +94,7 @@ cd REPO
 
 ### 2. Configurar variables de entorno
 
-Crea un archivo `.env` en la raiz del monorepo:
+Crea un archivo `.env` en la raíz del monorepo:
 
 ```env
 # Puertos
@@ -110,15 +110,15 @@ FIREBASE_PROJECT_ID=CHANGEME
 FIREBASE_CLIENT_EMAIL=tu-service-account@tu-proyecto.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nTU_CLAVE\n-----END PRIVATE KEY-----\n"
 
-# Frontend - URL base del API que consumira la UI
+# Frontend - URL base del API que consumirá la UI
 NEXT_PUBLIC_API_URL=http://localhost:3000
 ```
 
-> Si `FIREBASE_CLIENT_EMAIL` y `FIREBASE_PRIVATE_KEY` no estan presentes, el backend sigue funcionando en modo mock para auditoria y deja los logs en consola en vez de persistirlos en Firestore.
+> Si `FIREBASE_CLIENT_EMAIL` y `FIREBASE_PRIVATE_KEY` no están presentes, el backend sigue funcionando en modo mock para auditoría y deja los logs en consola en vez de persistirlos en Firestore.
 
-> Para desarrollo local **solo backend + frontend**, apuntar `NEXT_PUBLIC_API_URL` al puerto del backend (`http://localhost:3000`). Ajustar segun tu proxy o BFF de autenticacion en otros entornos.
+> Para desarrollo local **solo backend + frontend**, apuntar `NEXT_PUBLIC_API_URL` al puerto del backend (`http://localhost:3000`). Ajustar según tu proxy o BFF de autenticación en otros entornos.
 
-### 3. Construir imagenes Docker (opcional)
+### 3. Construir imágenes Docker (opcional)
 
 ```bash
 docker build -t serviplus-backend-reportes -f backend-reportes/Dockerfile backend-reportes/
@@ -131,7 +131,7 @@ docker build -t serviplus-frontend -f frontend/Dockerfile frontend/
 docker compose up -d redis backend-reportes
 ```
 
-### 5. Verificar que los servicios estan activos
+### 5. Verificar que los servicios están activos
 
 ```bash
 docker compose ps
@@ -184,9 +184,9 @@ Comando correcto después de modificar el código:
 docker compose up -d --build backend-reportes
 ```
 
-Asegúrate de que `NEXT_PUBLIC_API_URL` en `.env` sea alcanzable desde el navegador (IP/host publico o `localhost` segun el caso).
+Asegúrate de que `NEXT_PUBLIC_API_URL` en `.env` sea alcanzable desde el navegador (IP/host público o `localhost` según el caso).
 
-## Comandos utiles
+## Comandos útiles
 
 ```bash
 # Logs
@@ -243,21 +243,21 @@ npm run test:e2e
 | Rama / evento | Pipeline | Que valida |
 |---|---|---|
 | PR -> `develop` | **CI** | Lint, Prettier, `tsc`, build, tests Jest (backend), Playwright (frontend), Docker build |
-| PR -> `main` | **CD** | Build/push imagenes a Docker Hub + deploy SSH (si hay secrets configurados) |
+| PR -> `main` | **CD** | Build/push imágenes a Docker Hub + deploy SSH (si hay secrets configurados) |
 
 Resumen:
 
 1. Trabajar en rama de feature (`feature/...`).
 2. Abrir PR hacia **`develop`** -> corre CI (solo jobs afectados por `paths-filter`).
 3. Tras revision, merge a `develop`.
-4. Abrir PR **`develop` -> `main`** -> corre CD en cada actualizacion del PR.
+4. Abrir PR **`develop` -> `main`** -> corre CD en cada actualización del PR.
 5. Configurar secrets de CD en GitHub (Docker Hub + deploy SSH) para despliegue en EC2 u otro VPS.
 
 ## CI/CD en GitHub
 
-### Docker Hub (imagenes del CD)
+### Docker Hub (imágenes del CD)
 
-1. Crea cuenta en [Docker Hub](https://hub.docker.com/) (o usa una existente).
+1. Crea una cuenta en [Docker Hub](https://hub.docker.com/) (o usa una existente).
 2. **Account Settings -> Security -> New Access Token** (permiso *Read & Write* para push desde Actions).
 3. En el repo: **Settings -> Secrets and variables -> Actions** -> crea:
 
@@ -266,13 +266,13 @@ Resumen:
 | `DOCKERHUB_USERNAME` | Tu usuario de Docker Hub (namespace), ej. `serviplus` |
 | `DOCKERHUB_TOKEN` | El access token (no la contraseña de la cuenta) |
 
-Las imagenes quedaran como:
+Las imágenes quedarán como:
 
 - `TU_USUARIO/backend-reportes:<sha>`
 - `TU_USUARIO/frontend:<sha>`
 - `TU_USUARIO/api-gateway:<sha>`
 
-Repositorios privados en Docker Hub requieren plan de pago; para pruebas usa repos **publicos** o un unico namespace con las tres imagenes.
+Repositorios privados en Docker Hub requieren un plan de pago; para pruebas usa repos **públicos** o un único namespace con las tres imágenes.
 
 ### Secrets de deploy (servidor EC2/VPS)
 
@@ -286,34 +286,45 @@ Repositorios privados en Docker Hub requieren plan de pago; para pruebas usa rep
 
 En el servidor, `docker compose` usa `IMAGE_REGISTRY` = tu `DOCKERHUB_USERNAME` y `IMAGE_TAG` = SHA del commit (el CD los exporta antes del `pull`).
 
-Las variables de aplicacion (`JWT_SECRET`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, puertos) viven en el **`.env` del servidor**, no en GitHub Actions.
+Las variables de aplicación (`JWT_SECRET`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, puertos) viven en el **`.env` del servidor**, no en GitHub Actions.
 
 ## Cobertura de tests
 
-| Componente | Herramienta | Donde ver el % |
+| Componente | Herramienta | Dónde ver el % |
 |---|---|---|
 | backend-reportes | Jest (`npm run test` -> `--coverage`) | Salida de consola y job **Tests unitarios** en CI |
 | backend-reportes e2e | Jest + Supertest | `npm run test:e2e` |
 | frontend | Playwright (`npm run test:e2e`) | Reporte en CI; UI local con `npm run test:e2e:ui` |
 
-La carpeta `coverage/` esta en `.gitignore`: se genera en cada ejecucion pero **no se versiona**. Para exigir un minimo en CI, añade `coverageThreshold` en `backend-reportes/package.json`.
+La carpeta `coverage/` está en `.gitignore`: se genera en cada ejecución pero **no se versiona**. Para exigir un mínimo en CI, añade `coverageThreshold` en `backend-reportes/package.json`.
 
 ## Estado del proyecto
 
 | Area | Estado | Notas |
 |---|---|---|
 | API reportes financieros | ✅ | `POST /reportes/generar`, adapter finanzas |
-| Cache Redis (Cache-Aside) | ✅ | Degradacion graceful si Redis no esta disponible |
+| Cache Redis (Cache-Aside) | ✅ | Degradación graceful si Redis no está disponible |
 | Auditoria Firebase | ✅ | Repositorio Firestore |
 | Health check | ✅ | `GET /health` |
-| UI reportes + RBAC demo | ✅ | Next.js, validacion periodo `YYYY-MM` |
+| UI reportes + RBAC demo | ✅ | Next.js, validación periodo `YYYY-MM` |
 | CI en `develop` | ✅ | Paths filter backend / frontend |
 | CD en PR a `main` | ✅ | Docker Hub + deploy SSH opcional |
-| Umbral de cobertura en CI | 🔜 | Opcional (`coverageThreshold`) |
+
+| Sprint | Estado | Descripción |
+|---|---|---|
+| S0 | ✅ Completado | Arquetipo base, configuración DAS, CI/CD y DevOps inicial |
+| S1 | ✅ Completado | Informe de solicitudes y atenciones asociadas |
+| S2 | ✅ Completado | Informe de ventas, clientes y tiempo de atenciones, exportación de informes por pdf, excel |
+| S3 | 🔜 Pendiente | Por definir |
+
 
 ## Creditos
 
-- Proyecto academico / ServiPlus S.A. - Modulo de Reportes Operativos.
+- Proyecto académico / ServiPlus S.A. - Módulo de Reportes Operativos.
+- Samuel Arenas - 202341928
+- Juan Sebastian Sierra - 202343656
+- María Juliana Saavedra - 202344035
+- Santiago Fernández Guzmán - 202610133
 - Arquitectura alineada con DAS e ISO/IEC 25010.
 
 ## Licencia
