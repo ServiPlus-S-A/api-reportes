@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { FinanzasAnalyticsService } from "../finanzas-analytics.service";
 import { FinanzasAdapter } from "../../../integraciones/finanzas/finanzas.adapter";
 import { FirebaseReporteRepository } from "../../../shared/repositories/firebase-reporte.repository";
+import { ComercialAdapter } from "../../../integraciones/comercial/comercial.adapter";
 import Redis from "ioredis";
 import {
   generarExcelFinanciero,
@@ -29,6 +30,7 @@ describe("FinanzasAnalyticsService", () => {
   let service: FinanzasAnalyticsService;
   let adapter: jest.Mocked<FinanzasAdapter>;
   let repository: jest.Mocked<FirebaseReporteRepository>;
+  let comercialAdapter: jest.Mocked<ComercialAdapter>;
   let mockRedisClient: any;
 
   beforeEach(async () => {
@@ -45,7 +47,14 @@ describe("FinanzasAnalyticsService", () => {
         },
         {
           provide: FirebaseReporteRepository,
-          useValue: { saveAuditLog: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            saveAuditLog: jest.fn().mockResolvedValue(undefined),
+            saveAccessLog: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: ComercialAdapter,
+          useValue: { fetchFacturasPagadas: jest.fn() },
         },
       ],
     }).compile();
@@ -53,6 +62,7 @@ describe("FinanzasAnalyticsService", () => {
     service = module.get<FinanzasAnalyticsService>(FinanzasAnalyticsService);
     adapter = module.get(FinanzasAdapter);
     repository = module.get(FirebaseReporteRepository);
+    comercialAdapter = module.get(ComercialAdapter);
     mockRedisClient = (service as any).redisClient;
     (generarExcelFinanciero as jest.Mock).mockResolvedValue(
       Buffer.from("xlsx"),
@@ -213,6 +223,158 @@ describe("FinanzasAnalyticsService", () => {
       await expect(service.generarReporte(dto, "user5")).rejects.toThrow(
         "Adapter Error",
       );
+    });
+  });
+
+  describe("obtenerIngresosPorTipoServicio", () => {
+    const userPayload = { sub: "coord-1", role: "coordinador_administrativo", unidadIds: ["reportes-centro"] };
+    const ipAddress = "127.0.0.1";
+
+    it("deberia retornar ingresos agrupados por tipo de servicio exitosamente en COP", async () => {
+      comercialAdapter.fetchFacturasPagadas.mockResolvedValue([
+        {
+          id: "FAC-001",
+          tipoServicio: "Soporte",
+          monto: 1000000,
+          moneda: "COP",
+          estadoFactura: "Pagada",
+          fechaFactura: "2026-05-10T10:00:00.000Z",
+        },
+        {
+          id: "FAC-002",
+          tipoServicio: "Mantenimiento",
+          monto: 1500000,
+          moneda: "COP",
+          estadoFactura: "Pagada",
+          fechaFactura: "2026-05-15T14:30:00.000Z",
+        },
+        {
+          id: "FAC-003",
+          tipoServicio: "Soporte",
+          monto: 500, // USD (should be converted: 500 / 0.00025 = 2,000,000 COP)
+          moneda: "USD",
+          estadoFactura: "Pagada",
+          fechaFactura: "2026-05-25T11:15:00.000Z",
+        },
+        {
+          id: "FAC-004",
+          tipoServicio: "Soporte",
+          monto: 1000000,
+          moneda: "COP",
+          estadoFactura: "Pendiente", // Should be ignored
+          fechaFactura: "2026-05-26T12:00:00.000Z",
+        },
+      ]);
+
+      const dto = {
+        fechaInicio: "2026-05-01",
+        fechaFin: "2026-05-31",
+        moneda: "COP" as any,
+      };
+
+      const res = await service.obtenerIngresosPorTipoServicio(dto, userPayload, ipAddress);
+
+      expect(res.moneda).toBe("COP");
+      expect(res.fechaInicio).toBe("2026-05-01");
+      expect(res.fechaFin).toBe("2026-05-31");
+
+      // Table verify:
+      // Mantenimiento: cantidad = 1, subtotal = 1500000, IVA = 285000, total = 1785000
+      // Soporte: cantidad = 2, subtotal = 1000000 (FAC-001) + 2000000 (FAC-003) = 3000000. IVA = 570000, total = 3570000
+      expect(res.tabla).toHaveLength(2);
+      const soporteRow = res.tabla.find((row) => row.tipoServicio === "Soporte");
+      expect(soporteRow).toBeDefined();
+      expect(soporteRow?.cantidadAtenciones).toBe(2);
+      expect(soporteRow?.subtotalIngresos).toBe(3000000);
+      expect(soporteRow?.impuestos).toBe(570000);
+      expect(soporteRow?.totalNetoRecaudado).toBe(3570000);
+
+      // Graph verify:
+      // Total general = 1785000 + 3570000 = 5355000
+      // Soporte % = (3570000 / 5355000) * 100 = 66.67
+      const soporteGraph = res.grafico.find((g) => g.tipoServicio === "Soporte");
+      expect(soporteGraph?.porcentaje).toBe(66.67);
+      expect(repository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "VIEW_ANALISIS_FINANCIERO_INGRESOS",
+          allowed: true,
+          userId: "coord-1",
+        }),
+      );
+    });
+
+    it("deberia retornar ingresos agrupados por tipo de servicio exitosamente en USD", async () => {
+      comercialAdapter.fetchFacturasPagadas.mockResolvedValue([
+        {
+          id: "FAC-001",
+          tipoServicio: "Soporte",
+          monto: 1000000, // COP (should be converted: 1000000 * 0.00025 = 250 USD)
+          moneda: "COP",
+          estadoFactura: "Pagada",
+          fechaFactura: "2026-05-10T10:00:00.000Z",
+        },
+        {
+          id: "FAC-002",
+          tipoServicio: "Soporte",
+          monto: 500, // USD
+          moneda: "USD",
+          estadoFactura: "Pagada",
+          fechaFactura: "2026-05-25T11:15:00.000Z",
+        },
+      ]);
+
+      const dto = {
+        fechaInicio: "2026-05-01",
+        fechaFin: "2026-05-31",
+        moneda: "USD" as any,
+      };
+
+      const res = await service.obtenerIngresosPorTipoServicio(dto, userPayload, ipAddress);
+
+      expect(res.moneda).toBe("USD");
+      const soporteRow = res.tabla.find((row) => row.tipoServicio === "Soporte");
+      expect(soporteRow).toBeDefined();
+      expect(soporteRow?.cantidadAtenciones).toBe(2);
+      expect(soporteRow?.subtotalIngresos).toBe(750);
+      expect(soporteRow?.impuestos).toBe(142.5); // 750 * 0.19
+      expect(soporteRow?.totalNetoRecaudado).toBe(892.5);
+    });
+
+    it("deberia retornar un mensaje informativo si no hay facturas en el rango de fechas", async () => {
+      comercialAdapter.fetchFacturasPagadas.mockResolvedValue([]);
+
+      const dto = {
+        fechaInicio: "2026-05-01",
+        fechaFin: "2026-05-31",
+        moneda: "COP" as any,
+      };
+
+      const res = await service.obtenerIngresosPorTipoServicio(dto, userPayload, ipAddress);
+
+      expect(res.mensaje).toBe("No se registran ingresos para los filtros aplicados");
+      expect(res.tabla).toHaveLength(0);
+      expect(res.grafico).toHaveLength(0);
+      expect(repository.saveAccessLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "VIEW_ANALISIS_FINANCIERO_INGRESOS",
+          allowed: false,
+          userId: "coord-1",
+        }),
+      );
+    });
+
+    it("deberia arrojar InternalServerErrorException si falla la sincronizacion con el modulo comercial", async () => {
+      comercialAdapter.fetchFacturasPagadas.mockRejectedValue(new Error("API Timeout"));
+
+      const dto = {
+        fechaInicio: "2026-05-01",
+        fechaFin: "2026-05-31",
+        moneda: "COP" as any,
+      };
+
+      await expect(
+        service.obtenerIngresosPorTipoServicio(dto, userPayload, ipAddress),
+      ).rejects.toThrow("Error de integración: No se pudo obtener la información financiera en este momento");
     });
   });
 
