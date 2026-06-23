@@ -23,7 +23,7 @@ export class JwtReportesService {
       }
 
       const unidadIds = Array.isArray(payload.unidadIds)
-        ? payload.unidadIds.map((value) => String(value))
+        ? payload.unidadIds.map(String)
         : payload.unidadId
           ? [String(payload.unidadId)]
           : [];

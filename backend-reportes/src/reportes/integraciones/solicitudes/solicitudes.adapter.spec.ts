@@ -68,4 +68,10 @@ describe("SolicitudesAdapter", () => {
       adapter.obtenerSolicitudPorId("REQ-00000"),
     ).resolves.toBeNull();
   });
+
+  it("returns mocked solicitudes for desempeno", async () => {
+    const result = await adapter.fetchSolicitudesParaDesempeno();
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0]).toHaveProperty("tecnicoId");
+  });
 });

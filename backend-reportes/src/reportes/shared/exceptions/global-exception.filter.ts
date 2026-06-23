@@ -28,7 +28,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     this.logger.error(
       `Exception for [${request.method}] ${request.url} - Status: ${status}`,
-      exception instanceof Error ? exception.stack : String(exception),
+      exception instanceof Error ? exception.stack : JSON.stringify(exception),
     );
 
     response.status(status).json({

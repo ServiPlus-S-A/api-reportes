@@ -13,6 +13,7 @@ export class FinanzasAdapter {
       if (url) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
+        timeout.unref?.();
 
         try {
           const response = await fetch(`${url}?periodo=${periodo}`, {

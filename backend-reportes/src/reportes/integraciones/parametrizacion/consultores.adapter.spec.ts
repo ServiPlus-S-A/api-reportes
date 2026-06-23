@@ -13,4 +13,10 @@ describe("ConsultoresAdapter", () => {
       adapter.obtenerConsultoresPorSolicitud("REQ-00000"),
     ).resolves.toEqual([]);
   });
+
+  it("returns catalog of tecnicos for desempeno", async () => {
+    const result = await adapter.obtenerTecnicosParaDesempeno();
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0]).toHaveProperty("especialidad");
+  });
 });
