@@ -12,6 +12,7 @@ import { ConsultoresAdapter } from "./integraciones/parametrizacion/consultores.
 import { FinanzasAdapter } from "./integraciones/finanzas/finanzas.adapter";
 import { ServiciosAdapter } from "./integraciones/parametrizacion/servicios.adapter";
 import { SolicitudesAdapter } from "./integraciones/solicitudes/solicitudes.adapter";
+import { ComercialAdapter } from "./integraciones/comercial/comercial.adapter";
 
 import { JwtReportesService } from "./shared/auth/jwt-reportes.service";
 import { JwtAuthGuard } from "./shared/auth/jwt-auth.guard";
@@ -36,6 +37,7 @@ import { RedisCacheService } from "./shared/cache/redis-cache.service";
     ServiciosAdapter,
     ConsultoresAdapter,
     AtencionesAdapter,
+    ComercialAdapter,
     JwtReportesService,
     JwtAuthGuard,
     RolesGuard,

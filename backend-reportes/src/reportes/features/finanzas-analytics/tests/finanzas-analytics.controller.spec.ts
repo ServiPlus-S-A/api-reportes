@@ -2,6 +2,8 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { FinanzasAnalyticsController } from "../finanzas-analytics.controller";
 import { FinanzasAnalyticsService } from "../finanzas-analytics.service";
 import { BadRequestException } from "@nestjs/common";
+import { JwtAuthGuard } from "../../../shared/auth/jwt-auth.guard";
+import { RolesGuard } from "../../../shared/auth/roles.guard";
 
 describe("FinanzasAnalyticsController", () => {
   let controller: FinanzasAnalyticsController;
@@ -13,10 +15,18 @@ describe("FinanzasAnalyticsController", () => {
       providers: [
         {
           provide: FinanzasAnalyticsService,
-          useValue: { generarReporte: jest.fn() },
+          useValue: {
+            generarReporte: jest.fn(),
+            obtenerIngresosPorTipoServicio: jest.fn(),
+          },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<FinanzasAnalyticsController>(
       FinanzasAnalyticsController,
@@ -72,4 +82,37 @@ describe("FinanzasAnalyticsController", () => {
       );
     });
   });
+
+  describe("obtenerIngresosPorTipoServicio", () => {
+    it("deberia delegar en el servicio obtenerIngresosPorTipoServicio", async () => {
+      const mockResult: any = { moneda: "COP", tabla: [] };
+      service.obtenerIngresosPorTipoServicio.mockResolvedValue(mockResult);
+
+      const query = { fechaInicio: "2026-01-01", fechaFin: "2026-06-30", moneda: "COP" as any };
+      const user = { sub: "user-123", role: "coordinador_administrativo", unidadIds: [] };
+      const req = { ip: "127.0.0.1" };
+
+      const res = await controller.obtenerIngresosPorTipoServicio(query, user, req as any);
+
+      expect(res).toEqual(mockResult);
+      expect(service.obtenerIngresosPorTipoServicio).toHaveBeenCalledWith(
+        query,
+        user,
+        "127.0.0.1",
+      );
+    });
+
+    it("deberia propagar errores del servicio", async () => {
+      service.obtenerIngresosPorTipoServicio.mockRejectedValue(new Error("Database error"));
+
+      const query = {};
+      const user = { sub: "user-123", role: "coordinador_administrativo", unidadIds: [] };
+      const req = { ip: "127.0.0.1" };
+
+      await expect(
+        controller.obtenerIngresosPorTipoServicio(query, user, req as any),
+      ).rejects.toThrow("Database error");
+    });
+  });
 });
+
